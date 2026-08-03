@@ -219,13 +219,15 @@ func TestBuildClaudeStatusLineFooter_HideBothLines(t *testing.T) {
 // model · effort · contextLeft · cwd segments deterministically.
 type stubFooterAgent struct {
 	stubAgent
-	model   string
-	effort  string
-	workDir string
+	model       string
+	effort      string
+	serviceTier string
+	workDir     string
 }
 
 func (a *stubFooterAgent) GetModel() string           { return a.model }
 func (a *stubFooterAgent) GetReasoningEffort() string { return a.effort }
+func (a *stubFooterAgent) GetServiceTier() string     { return a.serviceTier }
 func (a *stubFooterAgent) GetWorkDir() string         { return a.workDir }
 
 // newLegacyFooterEngine returns an Engine with all three footer flags on,
@@ -253,6 +255,28 @@ func TestBuildReplyFooter_LegacyAllSegments(t *testing.T) {
 	// Segments joined by " · ".
 	if !strings.Contains(got, " · ") {
 		t.Errorf("legacy footer = %q, expected ' · ' separators", got)
+	}
+}
+
+func TestBuildClaudeStatusLineFooter_ShowsFastServiceTier(t *testing.T) {
+	session := &controllableAgentSession{
+		model:           "gpt-5.6-luna",
+		reasoningEffort: "max",
+		serviceTier:     "priority",
+		workDir:         "/tmp/ws",
+		contextUsage: &ContextUsage{
+			InputTokens:       100,
+			OutputTokens:      20,
+			CachedInputTokens: 200,
+			ContextWindow:     10_000,
+			UsedTokens:        300,
+		},
+	}
+	e := newClaudeFooterEngine()
+
+	got := e.buildClaudeStatusLineFooter(nil, session, "/tmp/ws")
+	if !strings.Contains(got, "gpt-5.6-luna · effort:max · speed:fast") {
+		t.Fatalf("footer = %q, want model, effort, and fast speed", got)
 	}
 }
 

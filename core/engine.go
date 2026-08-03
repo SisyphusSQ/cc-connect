@@ -6033,6 +6033,7 @@ var builtinCommands = []struct {
 	{[]string{"allow"}, "allow"},
 	{[]string{"model"}, "model"},
 	{[]string{"reasoning", "effort"}, "reasoning"},
+	{[]string{"speed"}, "speed"},
 	{[]string{"mode"}, "mode"},
 	{[]string{"lang"}, "lang"},
 	{[]string{"quiet"}, "quiet"},
@@ -6243,6 +6244,8 @@ func (e *Engine) handleCommand(p Platform, msg *Message, raw string) bool {
 		e.cmdModel(p, msg, args)
 	case "reasoning":
 		e.cmdReasoning(p, msg, args)
+	case "speed":
+		e.cmdSpeed(p, msg, args)
 	case "mode":
 		e.cmdMode(p, msg, args)
 	case "lang":
@@ -6893,6 +6896,10 @@ func (e *Engine) buildReplyFooter(agent Agent, session AgentSession, workspaceDi
 			parts = append(parts, effort)
 			hasStatus = true
 		}
+		if tier := replyFooterServiceTier(session, agent); tier != "" {
+			parts = append(parts, "speed:"+formatServiceTierForFooter(tier))
+			hasStatus = true
+		}
 		if contextFirst {
 			// Already added before model so "[ctx]" stays on the same footer line.
 		} else if contextLeft != "" {
@@ -6940,12 +6947,13 @@ func (e *Engine) composeRichStatusFooter(streaming bool, turnStart time.Time, ag
 	// Line 1: elapsed timer (now always the "done" form since streaming branch returned above)
 	lines = append(lines, formatElapsed(time.Since(turnStart), streaming, e.i18n.currentLang()))
 
-	// Line 2: model + effort + token usage detail + ctx %
+	// Line 2: model + effort + speed + token usage detail + ctx %
 	if e.showContextIndicator {
 		usage := replyFooterSessionContextUsage(session)
 		model := replyFooterModel(session, agent)
 		effort := replyFooterReasoningEffort(session, agent)
-		if line := buildClaudeStatusLineFooter(model, effort, usage); line != "" {
+		tier := replyFooterServiceTier(session, agent)
+		if line := buildClaudeStatusLineFooter(model, effort, tier, usage); line != "" {
 			lines = append(lines, line)
 		} else if fallback := e.replyFooterUsageText(session, agent); fallback != "" {
 			// fallback for non-claudecode agents that still expose UsageReporter
@@ -6955,6 +6963,9 @@ func (e *Engine) composeRichStatusFooter(streaming bool, turnStart time.Time, ag
 			}
 			if effort != "" {
 				parts = append(parts, effort)
+			}
+			if tier != "" {
+				parts = append(parts, "speed:"+formatServiceTierForFooter(tier))
 			}
 			parts = append(parts, fallback)
 			lines = append(lines, strings.Join(parts, " · "))
@@ -6973,22 +6984,26 @@ func (e *Engine) composeRichStatusFooter(streaming bool, turnStart time.Time, ag
 
 // buildClaudeStatusLineFooter renders the rich-card line-2 token-usage detail:
 //
-//	claude-opus-4-7[1m] · xhigh · out 168 · in 1 cw 971 cr 40.8k · ctx 4%
+//	claude-opus-4-7[1m] · xhigh · speed:fast · out 168 · in 1 cw 971 cr 40.8k · ctx 4%
 //
 // Sections (each skipped when its data is missing):
 //   - model: from session GetModel() / agent.Name()
 //   - effort: reasoning_effort (Codex / Claude high/medium/low/xhigh)
+//   - speed: provider service tier (for example standard or fast)
 //   - token counts: out (output) · in (new input) · cw (cache create) · cr (cache read)
 //   - ctx %: UsedTokens / ContextWindow, capped at 100%
 //
 // Returns "" when usage is nil and no model is known.
-func buildClaudeStatusLineFooter(model, effort string, usage *ContextUsage) string {
+func buildClaudeStatusLineFooter(model, effort, serviceTier string, usage *ContextUsage) string {
 	var parts []string
 	if model != "" {
 		parts = append(parts, model)
 	}
 	if effort != "" {
 		parts = append(parts, effort)
+	}
+	if serviceTier != "" {
+		parts = append(parts, "speed:"+formatServiceTierForFooter(serviceTier))
 	}
 	if usage != nil {
 		var counts []string
@@ -7123,6 +7138,31 @@ func replyFooterReasoningEffort(session AgentSession, agent Agent) string {
 		return strings.TrimSpace(getter.GetReasoningEffort())
 	}
 	return ""
+}
+
+func replyFooterServiceTier(session AgentSession, agent Agent) string {
+	if session != nil {
+		if getter, ok := session.(interface{ GetServiceTier() string }); ok {
+			if tier := strings.TrimSpace(getter.GetServiceTier()); tier != "" {
+				return tier
+			}
+		}
+	}
+	if getter, ok := agent.(interface{ GetServiceTier() string }); ok {
+		return strings.TrimSpace(getter.GetServiceTier())
+	}
+	return ""
+}
+
+func formatServiceTierForFooter(tier string) string {
+	switch normalizeServiceTierID(tier) {
+	case "default":
+		return "standard"
+	case "priority":
+		return "fast"
+	default:
+		return strings.ToLower(strings.TrimSpace(tier))
+	}
 }
 
 func (e *Engine) replyFooterUsageText(session AgentSession, agent Agent) string {
@@ -7308,7 +7348,7 @@ func replyFooterHomeRelativePath(path, home string) (string, bool) {
 // buildClaudeStatusLineFooter renders a CCD-statusline-style footer for the
 // reply, composed of two lines:
 //
-//	line 1 (controlled by show_context_indicator): <model id> · [effort:X ·] out N · in N cw N cr N · ctx N%
+//	line 1 (controlled by show_context_indicator): <model id> · [effort:X ·] [speed:X ·] out N · in N cw N cr N · ctx N%
 //	line 2 (controlled by show_workdir_indicator): <workspace dir>
 //
 // Returns "" if reply_footer is disabled, or if the active session does not
@@ -7344,7 +7384,7 @@ func (e *Engine) buildClaudeStatusLineFooter(agent Agent, session AgentSession, 
 		}
 
 		// Compose:
-		//   <model id> · [effort:X ·] out N · in N cw N cr N · ctx N%
+		//   <model id> · [effort:X ·] [speed:X ·] out N · in N cw N cr N · ctx N%
 		// `·` separates major segments; tokens-in tier (in/cw/cr) groups under
 		// one segment because cw/cr are just cache-tiered variants of input.
 		// Raw model id is preserved (e.g. "claude-opus-4-7[1m]") for diagnostic
@@ -7355,6 +7395,9 @@ func (e *Engine) buildClaudeStatusLineFooter(agent Agent, session AgentSession, 
 		}
 		if effort := strings.TrimSpace(replyFooterReasoningEffort(session, agent)); effort != "" {
 			line1Parts = append(line1Parts, "effort:"+effort)
+		}
+		if tier := strings.TrimSpace(replyFooterServiceTier(session, agent)); tier != "" {
+			line1Parts = append(line1Parts, "speed:"+formatServiceTierForFooter(tier))
 		}
 		line1Parts = append(line1Parts, fmt.Sprintf("out %s", formatStatusTokenCount(usage.OutputTokens)))
 		line1Parts = append(line1Parts, fmt.Sprintf("in %s cw %s cr %s",
@@ -9019,6 +9062,7 @@ func helpCardGroups() []helpCardGroup {
 			items: []helpCardItem{
 				{command: "/model", action: "nav:/model"},
 				{command: "/reasoning", action: "nav:/reasoning"},
+				{command: "/speed", action: "nav:/speed"},
 				{command: "/mode", action: "nav:/mode"},
 				{command: "/lang", action: "nav:/lang"},
 				{command: "/provider", action: "nav:/provider"},
@@ -9570,6 +9614,171 @@ func (e *Engine) cmdReasoning(p Platform, msg *Message, args []string) {
 	sessions.Save()
 
 	e.reply(p, msg.ReplyCtx, e.i18n.Tf(MsgReasoningChanged, target))
+}
+
+func (e *Engine) cmdSpeed(p Platform, msg *Message, args []string) {
+	agent, _, _, err := e.commandContext(p, msg)
+	if err != nil {
+		e.reply(p, msg.ReplyCtx, e.i18n.Tf(MsgWsResolutionError, err))
+		return
+	}
+
+	switcher, ok := agent.(ServiceTierSwitcher)
+	if !ok {
+		e.reply(p, msg.ReplyCtx, e.i18n.T(MsgSpeedNotSupported))
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(e.ctx, 3*time.Second)
+	options := switcher.AvailableServiceTiers(ctx)
+	cancel()
+	if len(options) == 0 {
+		e.reply(p, msg.ReplyCtx, e.i18n.T(MsgSpeedNotSupported))
+		return
+	}
+
+	if len(args) == 0 {
+		if supportsCards(p) {
+			e.replyWithCard(p, msg.ReplyCtx, e.renderSpeedCard(msg.SessionKey))
+			return
+		}
+		e.replySpeedOptions(p, msg.ReplyCtx, switcher, options)
+		return
+	}
+
+	option, ok := resolveServiceTierOption(args[0], options)
+	if !ok {
+		e.reply(p, msg.ReplyCtx, e.i18n.T(MsgSpeedUsage))
+		return
+	}
+
+	switcher.SetServiceTier(option.ID)
+	if !e.applyLiveServiceTierChange(msg.SessionKey, option.ID) {
+		e.cleanupInteractiveState(e.interactiveKeyForSessionKey(msg.SessionKey))
+	}
+	e.reply(p, msg.ReplyCtx, e.i18n.Tf(MsgSpeedChanged, e.serviceTierOptionLabel(option)))
+}
+
+func (e *Engine) replySpeedOptions(p Platform, replyCtx any, switcher ServiceTierSwitcher, options []ServiceTierOption) {
+	current := normalizeServiceTierID(switcher.GetServiceTier())
+	if current == "" {
+		current = "default"
+	}
+
+	var sb strings.Builder
+	if option, ok := findServiceTierOption(current, options); ok {
+		sb.WriteString(e.i18n.Tf(MsgSpeedCurrent, e.serviceTierOptionLabel(option)))
+	} else {
+		sb.WriteString(e.i18n.Tf(MsgSpeedCurrent, current))
+	}
+	sb.WriteString("\n\n")
+	sb.WriteString(e.i18n.T(MsgSpeedListTitle))
+
+	var buttons [][]ButtonOption
+	var row []ButtonOption
+	for i, option := range options {
+		label := e.serviceTierOptionLabel(option)
+		marker := "  "
+		if normalizeServiceTierID(option.ID) == current {
+			marker = "> "
+			label = "▶ " + label
+		}
+		sb.WriteString(fmt.Sprintf("%s%d. %s", marker, i+1, e.serviceTierOptionLabel(option)))
+		if description := e.serviceTierOptionDescription(option); description != "" {
+			sb.WriteString(" — " + description)
+		}
+		sb.WriteString("\n")
+		row = append(row, ButtonOption{Text: label, Data: fmt.Sprintf("cmd:/speed %d", i+1)})
+		if len(row) >= 2 {
+			buttons = append(buttons, row)
+			row = nil
+		}
+	}
+	if len(row) > 0 {
+		buttons = append(buttons, row)
+	}
+	sb.WriteString("\n")
+	sb.WriteString(e.i18n.T(MsgSpeedUsage))
+	e.replyWithButtons(p, replyCtx, sb.String(), buttons)
+}
+
+func resolveServiceTierOption(raw string, options []ServiceTierOption) (ServiceTierOption, bool) {
+	target := strings.TrimSpace(raw)
+	if idx, err := strconv.Atoi(target); err == nil && idx >= 1 && idx <= len(options) {
+		return options[idx-1], true
+	}
+	for _, option := range options {
+		if strings.EqualFold(option.ID, target) || strings.EqualFold(option.Name, target) {
+			return option, true
+		}
+		for _, alias := range option.Aliases {
+			if strings.EqualFold(alias, target) {
+				return option, true
+			}
+		}
+	}
+	return ServiceTierOption{}, false
+}
+
+func findServiceTierOption(id string, options []ServiceTierOption) (ServiceTierOption, bool) {
+	for _, option := range options {
+		if normalizeServiceTierID(option.ID) == normalizeServiceTierID(id) {
+			return option, true
+		}
+	}
+	return ServiceTierOption{}, false
+}
+
+func (e *Engine) serviceTierOptionLabel(option ServiceTierOption) string {
+	if normalizeServiceTierID(option.ID) == "default" {
+		return e.i18n.T(MsgSpeedStandardLabel)
+	}
+	if name := strings.TrimSpace(option.Name); name != "" {
+		return name
+	}
+	return strings.TrimSpace(option.ID)
+}
+
+func (e *Engine) serviceTierOptionDescription(option ServiceTierOption) string {
+	if description := strings.TrimSpace(option.Description); description != "" {
+		return description
+	}
+	if normalizeServiceTierID(option.ID) == "default" {
+		return e.i18n.T(MsgSpeedStandardDescription)
+	}
+	return ""
+}
+
+func normalizeServiceTierID(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "standard", "auto":
+		return "default"
+	case "fast":
+		return "priority"
+	default:
+		return strings.ToLower(strings.TrimSpace(raw))
+	}
+}
+
+func (e *Engine) applyLiveServiceTierChange(sessionKey, tier string) bool {
+	iKey := e.interactiveKeyForSessionKey(sessionKey)
+	e.interactiveMu.Lock()
+	state, ok := e.interactiveStates[iKey]
+	e.interactiveMu.Unlock()
+	if !ok || state == nil {
+		return false
+	}
+	state.mu.Lock()
+	session := state.agentSession
+	state.mu.Unlock()
+	if session == nil || !session.Alive() {
+		return false
+	}
+	switcher, ok := session.(LiveServiceTierSwitcher)
+	if !ok {
+		return false
+	}
+	return switcher.SetLiveServiceTier(tier)
 }
 
 func (e *Engine) cmdMode(p Platform, msg *Message, args []string) {
@@ -11654,6 +11863,8 @@ func (e *Engine) handleCardNav(action string, sessionKey string) *Card {
 		return e.renderModelCard(sessionKey)
 	case "/reasoning":
 		return e.renderReasoningCard()
+	case "/speed":
+		return e.renderSpeedCard(sessionKey)
 	case "/mode":
 		return e.renderModeCard()
 	case "/lang":
@@ -11855,6 +12066,27 @@ func (e *Engine) executeCardAction(cmd, args, sessionKey string) {
 				e.sessions.Save()
 				return
 			}
+		}
+
+	case "/speed":
+		if args == "" {
+			return
+		}
+		agent, _ := e.sessionContextForKey(sessionKey)
+		switcher, ok := agent.(ServiceTierSwitcher)
+		if !ok {
+			return
+		}
+		ctx, cancel := context.WithTimeout(e.ctx, 3*time.Second)
+		options := switcher.AvailableServiceTiers(ctx)
+		cancel()
+		option, ok := resolveServiceTierOption(args, options)
+		if !ok {
+			return
+		}
+		switcher.SetServiceTier(option.ID)
+		if !e.applyLiveServiceTierChange(sessionKey, option.ID) {
+			e.cleanupInteractiveState(interactiveKey)
 		}
 
 	case "/mode":
@@ -12685,6 +12917,61 @@ func (e *Engine) renderReasoningCard() *Card {
 		Select(e.i18n.T(MsgReasoningSelectPlaceholder), opts, initVal).
 		Buttons(e.cardBackButton())
 	cb.Note(e.i18n.T(MsgReasoningUsage))
+	return cb.Build()
+}
+
+func (e *Engine) renderSpeedCard(sessionKey string) *Card {
+	agent, _ := e.sessionContextForKey(sessionKey)
+	switcher, ok := agent.(ServiceTierSwitcher)
+	if !ok {
+		return e.simpleCard(e.i18n.T(MsgCardTitleSpeed), "turquoise", e.i18n.T(MsgSpeedNotSupported))
+	}
+
+	ctx, cancel := context.WithTimeout(e.ctx, 3*time.Second)
+	options := switcher.AvailableServiceTiers(ctx)
+	cancel()
+	if len(options) == 0 {
+		return e.simpleCard(e.i18n.T(MsgCardTitleSpeed), "turquoise", e.i18n.T(MsgSpeedNotSupported))
+	}
+
+	current := normalizeServiceTierID(switcher.GetServiceTier())
+	if current == "" {
+		current = "default"
+	}
+	currentLabel := current
+	if option, found := findServiceTierOption(current, options); found {
+		currentLabel = e.serviceTierOptionLabel(option)
+	}
+
+	var sb strings.Builder
+	sb.WriteString(e.i18n.Tf(MsgSpeedCurrent, currentLabel))
+	for _, option := range options {
+		sb.WriteString("\n")
+		marker := "◻"
+		if normalizeServiceTierID(option.ID) == current {
+			marker = "▶"
+		}
+		sb.WriteString(fmt.Sprintf("%s **%s**", marker, e.serviceTierOptionLabel(option)))
+		if description := e.serviceTierOptionDescription(option); description != "" {
+			sb.WriteString(" — " + description)
+		}
+	}
+
+	selectOptions := make([]CardSelectOption, 0, len(options))
+	initVal := ""
+	for i, option := range options {
+		value := fmt.Sprintf("act:/speed %d", i+1)
+		selectOptions = append(selectOptions, CardSelectOption{Text: e.serviceTierOptionLabel(option), Value: value})
+		if normalizeServiceTierID(option.ID) == current {
+			initVal = value
+		}
+	}
+
+	cb := NewCard().Title(e.i18n.T(MsgCardTitleSpeed), "turquoise").
+		Markdown(sb.String()).
+		Select(e.i18n.T(MsgSpeedSelectPlaceholder), selectOptions, initVal).
+		Buttons(e.cardBackButton())
+	cb.Note(e.i18n.T(MsgSpeedUsage))
 	return cb.Build()
 }
 

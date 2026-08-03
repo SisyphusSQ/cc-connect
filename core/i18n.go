@@ -307,6 +307,9 @@ const (
 	MsgReasoningCurrent      MsgKey = "reasoning_current"
 	MsgReasoningChanged      MsgKey = "reasoning_changed"
 	MsgReasoningNotSupported MsgKey = "reasoning_not_supported"
+	MsgSpeedCurrent          MsgKey = "speed_current"
+	MsgSpeedChanged          MsgKey = "speed_changed"
+	MsgSpeedNotSupported     MsgKey = "speed_not_supported"
 
 	MsgCompressNotSupported MsgKey = "compress_not_supported"
 	MsgCompressing          MsgKey = "compressing"
@@ -342,6 +345,11 @@ const (
 	MsgReasoningListTitle         MsgKey = "reasoning_list_title"
 	MsgReasoningUsage             MsgKey = "reasoning_usage"
 	MsgReasoningSelectPlaceholder MsgKey = "reasoning_select_placeholder"
+	MsgSpeedListTitle             MsgKey = "speed_list_title"
+	MsgSpeedUsage                 MsgKey = "speed_usage"
+	MsgSpeedSelectPlaceholder     MsgKey = "speed_select_placeholder"
+	MsgSpeedStandardLabel         MsgKey = "speed_standard_label"
+	MsgSpeedStandardDescription   MsgKey = "speed_standard_description"
 
 	MsgModeUsage                 MsgKey = "mode_usage"
 	MsgLangSelectPlaceholder     MsgKey = "lang_select_placeholder"
@@ -356,6 +364,7 @@ const (
 	MsgCardTitleLanguage         MsgKey = "card_title_language"
 	MsgCardTitleModel            MsgKey = "card_title_model"
 	MsgCardTitleReasoning        MsgKey = "card_title_reasoning"
+	MsgCardTitleSpeed            MsgKey = "card_title_speed"
 	MsgCardTitleMode             MsgKey = "card_title_mode"
 	MsgCardTitleSessions         MsgKey = "card_title_sessions"
 	MsgCardTitleSessionsPaged    MsgKey = "card_title_sessions_paged"
@@ -378,31 +387,31 @@ const (
 	MsgCronIDLabel               MsgKey = "cron_id_label"
 	MsgCronFailedSuffix          MsgKey = "cron_failed_suffix"
 
-	MsgTimerNotAvailable  MsgKey = "timer_not_available"
-	MsgTimerUsage         MsgKey = "timer_usage"
-	MsgTimerAddUsage      MsgKey = "timer_add_usage"
-	MsgTimerAdded         MsgKey = "timer_added"
-	MsgTimerAddedExec     MsgKey = "timer_added_exec"
-	MsgTimerAddExecUsage  MsgKey = "timer_addexec_usage"
-	MsgTimerEmpty         MsgKey = "timer_empty"
-	MsgTimerListTitle     MsgKey = "timer_list_title"
-	MsgTimerListFooter    MsgKey = "timer_list_footer"
-	MsgTimerDelUsage      MsgKey = "timer_del_usage"
-	MsgTimerMuteUsage     MsgKey = "timer_mute_usage"
-	MsgTimerDeleted       MsgKey = "timer_deleted"
-	MsgTimerNotFound      MsgKey = "timer_not_found"
-	MsgTimerMuted         MsgKey = "timer_muted"
-	MsgTimerUnmuted       MsgKey = "timer_unmuted"
-	MsgTimerCardHint      MsgKey = "timer_card_hint"
-	MsgTimerBtnMute       MsgKey = "timer_btn_mute"
-	MsgTimerBtnUnmute     MsgKey = "timer_btn_unmute"
-	MsgTimerBtnDelete     MsgKey = "timer_btn_delete"
-	MsgTimerIDLabel       MsgKey = "timer_id_label"
-	MsgTimerScheduledLabel MsgKey = "timer_scheduled_label"
-	MsgTimerFailedSuffix  MsgKey = "timer_failed_suffix"
-	MsgCommandsTagAgent          MsgKey = "commands_tag_agent"
-	MsgCommandsTagShell          MsgKey = "commands_tag_shell"
-	MsgUpgradeTimeoutSuffix      MsgKey = "upgrade_timeout_suffix"
+	MsgTimerNotAvailable    MsgKey = "timer_not_available"
+	MsgTimerUsage           MsgKey = "timer_usage"
+	MsgTimerAddUsage        MsgKey = "timer_add_usage"
+	MsgTimerAdded           MsgKey = "timer_added"
+	MsgTimerAddedExec       MsgKey = "timer_added_exec"
+	MsgTimerAddExecUsage    MsgKey = "timer_addexec_usage"
+	MsgTimerEmpty           MsgKey = "timer_empty"
+	MsgTimerListTitle       MsgKey = "timer_list_title"
+	MsgTimerListFooter      MsgKey = "timer_list_footer"
+	MsgTimerDelUsage        MsgKey = "timer_del_usage"
+	MsgTimerMuteUsage       MsgKey = "timer_mute_usage"
+	MsgTimerDeleted         MsgKey = "timer_deleted"
+	MsgTimerNotFound        MsgKey = "timer_not_found"
+	MsgTimerMuted           MsgKey = "timer_muted"
+	MsgTimerUnmuted         MsgKey = "timer_unmuted"
+	MsgTimerCardHint        MsgKey = "timer_card_hint"
+	MsgTimerBtnMute         MsgKey = "timer_btn_mute"
+	MsgTimerBtnUnmute       MsgKey = "timer_btn_unmute"
+	MsgTimerBtnDelete       MsgKey = "timer_btn_delete"
+	MsgTimerIDLabel         MsgKey = "timer_id_label"
+	MsgTimerScheduledLabel  MsgKey = "timer_scheduled_label"
+	MsgTimerFailedSuffix    MsgKey = "timer_failed_suffix"
+	MsgCommandsTagAgent     MsgKey = "commands_tag_agent"
+	MsgCommandsTagShell     MsgKey = "commands_tag_shell"
+	MsgUpgradeTimeoutSuffix MsgKey = "upgrade_timeout_suffix"
 
 	MsgCronScheduleLabel MsgKey = "cron_schedule_label"
 	MsgCronNextRunLabel  MsgKey = "cron_next_run_label"
@@ -561,6 +570,7 @@ const (
 	MsgBuiltinCmdAllow     MsgKey = "allow"
 	MsgBuiltinCmdModel     MsgKey = "model"
 	MsgBuiltinCmdReasoning MsgKey = "reasoning"
+	MsgBuiltinCmdSpeed     MsgKey = "speed"
 	MsgBuiltinCmdMode      MsgKey = "mode"
 	MsgBuiltinCmdLang      MsgKey = "lang"
 	MsgBuiltinCmdQuiet     MsgKey = "quiet"
@@ -990,6 +1000,7 @@ var messages = map[MsgKey]map[Language]string{
 			"/allow <tool>\n  Pre-allow a tool (next session)\n\n" +
 			"/model [switch <name>]\n  View/switch model\n\n" +
 			"/reasoning [level]\n  View/switch reasoning effort\n\n" +
+			"/speed [standard|fast]\n  View/switch response speed\n\n" +
 			"/mode [name]\n  View/switch permission mode\n\n" +
 			"/lang [en|zh|zh-TW|ja|es|auto]\n  View/switch language\n\n" +
 			"/compress\n  Compress conversation context\n\n" +
@@ -1034,6 +1045,7 @@ var messages = map[MsgKey]map[Language]string{
 			"/allow <工具名>\n  预授权工具（下次会话生效）\n\n" +
 			"/model [switch <名称>]\n  查看/切换模型\n\n" +
 			"/reasoning [级别]\n  查看/切换推理强度\n\n" +
+			"/speed [standard|fast]\n  查看/切换响应速度\n\n" +
 			"/mode [名称]\n  查看/切换权限模式\n\n" +
 			"/lang [en|zh|zh-TW|ja|es|auto]\n  查看/切换语言\n\n" +
 			"/compress\n  压缩会话上下文\n\n" +
@@ -1078,6 +1090,7 @@ var messages = map[MsgKey]map[Language]string{
 			"/allow <工具名>\n  預授權工具（下次會話生效）\n\n" +
 			"/model [switch <名稱>]\n  查看/切換模型\n\n" +
 			"/reasoning [級別]\n  查看/切換推理強度\n\n" +
+			"/speed [standard|fast]\n  查看/切換回應速度\n\n" +
 			"/mode [名稱]\n  查看/切換權限模式\n\n" +
 			"/lang [en|zh|zh-TW|ja|es|auto]\n  查看/切換語言\n\n" +
 			"/compress\n  壓縮會話上下文\n\n" +
@@ -1120,6 +1133,7 @@ var messages = map[MsgKey]map[Language]string{
 			"/allow <ツール名>\n  ツールを事前許可（次のセッションで有効）\n\n" +
 			"/model [switch <名前>]\n  モデルの表示/切り替え\n\n" +
 			"/reasoning [レベル]\n  推論レベルの表示/切り替え\n\n" +
+			"/speed [standard|fast]\n  応答速度の表示/切り替え\n\n" +
 			"/mode [名前]\n  権限モードの表示/切り替え\n\n" +
 			"/lang [en|zh|zh-TW|ja|es|auto]\n  言語の表示/切り替え\n\n" +
 			"/compress\n  会話コンテキストを圧縮\n\n" +
@@ -1162,6 +1176,7 @@ var messages = map[MsgKey]map[Language]string{
 			"/allow <herramienta>\n  Pre-autorizar herramienta (próxima sesión)\n\n" +
 			"/model [switch <nombre>]\n  Ver/cambiar modelo\n\n" +
 			"/reasoning [nivel]\n  Ver/cambiar nivel de razonamiento\n\n" +
+			"/speed [standard|fast]\n  Ver/cambiar velocidad de respuesta\n\n" +
 			"/mode [nombre]\n  Ver/cambiar modo de permisos\n\n" +
 			"/lang [en|zh|zh-TW|ja|es|auto]\n  Ver/cambiar idioma\n\n" +
 			"/compress\n  Comprimir contexto de conversación\n\n" +
@@ -2264,6 +2279,27 @@ var messages = map[MsgKey]map[Language]string{
 		LangJapanese:           "このエージェントは推論強度の切り替えをサポートしていません。",
 		LangSpanish:            "Este agente no soporta el cambio de esfuerzo de razonamiento.",
 	},
+	MsgSpeedCurrent: {
+		LangEnglish:            "Current speed: %s",
+		LangChinese:            "当前速度：%s",
+		LangTraditionalChinese: "目前速度：%s",
+		LangJapanese:           "現在の速度: %s",
+		LangSpanish:            "Velocidad actual: %s",
+	},
+	MsgSpeedChanged: {
+		LangEnglish:            "Speed switched to `%s`. The next turn will use this setting.",
+		LangChinese:            "速度已切换为 `%s`，下一轮对话将使用此设置。",
+		LangTraditionalChinese: "速度已切換為 `%s`，下一輪對話將使用此設定。",
+		LangJapanese:           "速度を `%s` に切り替えました。次のターンからこの設定を使用します。",
+		LangSpanish:            "Velocidad cambiada a `%s`. El siguiente turno usará esta configuración.",
+	},
+	MsgSpeedNotSupported: {
+		LangEnglish:            "This agent does not support speed switching.",
+		LangChinese:            "当前 Agent 不支持速度切换。",
+		LangTraditionalChinese: "目前 Agent 不支援速度切換。",
+		LangJapanese:           "このエージェントは速度の切り替えをサポートしていません。",
+		LangSpanish:            "Este agente no admite el cambio de velocidad.",
+	},
 	MsgMemoryNotSupported: {
 		LangEnglish:            "This agent does not support memory files.",
 		LangChinese:            "当前 Agent 不支持记忆文件。",
@@ -2489,6 +2525,34 @@ var messages = map[MsgKey]map[Language]string{
 		LangJapanese:           "使い方: `/reasoning <番号>` または `/reasoning <low|medium|high|xhigh>`",
 		LangSpanish:            "Uso: `/reasoning <número>` o `/reasoning <low|medium|high|xhigh>`",
 	},
+	MsgSpeedListTitle: {
+		LangEnglish:            "Available speeds:\n",
+		LangChinese:            "可用速度：\n",
+		LangTraditionalChinese: "可用速度：\n",
+		LangJapanese:           "利用可能な速度:\n",
+		LangSpanish:            "Velocidades disponibles:\n",
+	},
+	MsgSpeedUsage: {
+		LangEnglish:            "Usage: `/speed <number|standard|fast>`",
+		LangChinese:            "用法：`/speed <序号|standard|fast>`",
+		LangTraditionalChinese: "用法：`/speed <序號|standard|fast>`",
+		LangJapanese:           "使い方: `/speed <番号|standard|fast>`",
+		LangSpanish:            "Uso: `/speed <número|standard|fast>`",
+	},
+	MsgSpeedStandardLabel: {
+		LangEnglish:            "Standard",
+		LangChinese:            "标准",
+		LangTraditionalChinese: "標準",
+		LangJapanese:           "標準",
+		LangSpanish:            "Estándar",
+	},
+	MsgSpeedStandardDescription: {
+		LangEnglish:            "Standard speed and usage",
+		LangChinese:            "标准速度和用量",
+		LangTraditionalChinese: "標準速度和用量",
+		LangJapanese:           "標準の速度と使用量",
+		LangSpanish:            "Velocidad y uso estándar",
+	},
 	MsgModeUsage: {
 		LangEnglish:            "\nUse `/mode <name>` to switch.\nAvailable: %s",
 		LangChinese:            "\n使用 `/mode <名称>` 切换模式\n可用值: %s",
@@ -2507,6 +2571,10 @@ var messages = map[MsgKey]map[Language]string{
 	MsgReasoningSelectPlaceholder: {
 		LangEnglish: "Select reasoning level", LangChinese: "选择推理强度", LangTraditionalChinese: "選擇推理強度",
 		LangJapanese: "推論強度を選択", LangSpanish: "Seleccionar nivel de razonamiento",
+	},
+	MsgSpeedSelectPlaceholder: {
+		LangEnglish: "Select speed", LangChinese: "选择速度", LangTraditionalChinese: "選擇速度",
+		LangJapanese: "速度を選択", LangSpanish: "Seleccionar velocidad",
 	},
 	MsgModeSelectPlaceholder: {
 		LangEnglish: "Select mode", LangChinese: "选择模式", LangTraditionalChinese: "選擇模式",
@@ -2547,6 +2615,10 @@ var messages = map[MsgKey]map[Language]string{
 	MsgCardTitleReasoning: {
 		LangEnglish: "Reasoning", LangChinese: "推理强度", LangTraditionalChinese: "推理強度",
 		LangJapanese: "推論強度", LangSpanish: "Razonamiento",
+	},
+	MsgCardTitleSpeed: {
+		LangEnglish: "Speed", LangChinese: "速度", LangTraditionalChinese: "速度",
+		LangJapanese: "速度", LangSpanish: "Velocidad",
 	},
 	MsgCardTitleMode: {
 		LangEnglish: "Permission Mode", LangChinese: "权限模式", LangTraditionalChinese: "權限模式",
@@ -3629,6 +3701,13 @@ var messages = map[MsgKey]map[Language]string{
 		LangTraditionalChinese: "查看/切換推理強度，參數: [等級]",
 		LangJapanese:           "推論強度の表示/切り替え、引数: [レベル]",
 		LangSpanish:            "Ver/cambiar esfuerzo de razonamiento, arg: [nivel]",
+	},
+	MsgBuiltinCmdSpeed: {
+		LangEnglish:            "View/switch response speed, arg: [standard|fast]",
+		LangChinese:            "查看/切换响应速度，参数: [standard|fast]",
+		LangTraditionalChinese: "查看/切換回應速度，參數: [standard|fast]",
+		LangJapanese:           "応答速度の表示/切り替え、引数: [standard|fast]",
+		LangSpanish:            "Ver/cambiar velocidad de respuesta, arg: [standard|fast]",
 	},
 	MsgBuiltinCmdMode: {
 		LangEnglish:            "View/switch permission mode, arg: [name]",

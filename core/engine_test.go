@@ -457,6 +457,7 @@ type stubModelModeAgent struct {
 	model           string
 	mode            string
 	reasoningEffort string
+	serviceTier     string
 	providers       []ProviderConfig
 	active          string
 }
@@ -472,8 +473,18 @@ type stubLiveModeSession struct {
 	modes []string
 }
 
+type stubLiveServiceTierSession struct {
+	stubAgentSession
+	tiers []string
+}
+
 func (s *stubLiveModeSession) SetLiveMode(mode string) bool {
 	s.modes = append(s.modes, mode)
+	return true
+}
+
+func (s *stubLiveServiceTierSession) SetLiveServiceTier(tier string) bool {
+	s.tiers = append(s.tiers, tier)
 	return true
 }
 
@@ -489,6 +500,21 @@ func (a *stubModelModeAgent) AvailableModels(_ context.Context) []ModelOption {
 	return []ModelOption{
 		{Name: "gpt-4.1", Desc: "Balanced", Alias: "gpt"},
 		{Name: "gpt-4.1-mini", Desc: "Fast"},
+	}
+}
+
+func (a *stubModelModeAgent) SetServiceTier(tier string) {
+	a.serviceTier = tier
+}
+
+func (a *stubModelModeAgent) GetServiceTier() string {
+	return a.serviceTier
+}
+
+func (a *stubModelModeAgent) AvailableServiceTiers(_ context.Context) []ServiceTierOption {
+	return []ServiceTierOption{
+		{ID: "default", Name: "Standard", Description: "Standard speed", Aliases: []string{"standard"}},
+		{ID: "priority", Name: "Fast", Description: "1.5x speed, increased usage", Aliases: []string{"fast"}},
 	}
 }
 
@@ -5396,6 +5422,90 @@ func TestCmdReasoning_RejectsMinimal(t *testing.T) {
 	}
 }
 
+func TestCmdSpeed_UsesInlineButtonsOnButtonOnlyPlatform(t *testing.T) {
+	p := &stubInlineButtonPlatform{stubPlatformEngine: stubPlatformEngine{n: "inline-only"}}
+	agent := &stubModelModeAgent{}
+	e := NewEngine("test", agent, []Platform{p}, "", LangEnglish)
+
+	e.cmdSpeed(p, &Message{SessionKey: "test:user1", ReplyCtx: "ctx"}, nil)
+
+	if len(p.buttonRows) == 0 {
+		t.Fatal("expected /speed to send inline buttons on button-only platform")
+	}
+	if got := p.buttonRows[0][0].Data; got != "cmd:/speed 1" {
+		t.Fatalf("first /speed button = %q, want %q", got, "cmd:/speed 1")
+	}
+	if got := p.buttonRows[0][1].Data; got != "cmd:/speed 2" {
+		t.Fatalf("second /speed button = %q, want %q", got, "cmd:/speed 2")
+	}
+}
+
+func TestCmdSpeed_AcceptsFastAlias(t *testing.T) {
+	p := &stubPlatformEngine{n: "plain"}
+	agent := &stubModelModeAgent{}
+	e := NewEngine("test", agent, []Platform{p}, "", LangEnglish)
+	msg := &Message{SessionKey: "test:user1", ReplyCtx: "ctx"}
+
+	e.cmdSpeed(p, msg, []string{"fast"})
+
+	if agent.serviceTier != "priority" {
+		t.Fatalf("service tier = %q, want priority", agent.serviceTier)
+	}
+	if len(p.sent) != 1 || !strings.Contains(p.sent[0], "Speed switched to `Fast`") {
+		t.Fatalf("sent = %v, want speed changed message", p.sent)
+	}
+}
+
+func TestCmdSpeed_AppliesLiveTierWithoutDiscardingConversation(t *testing.T) {
+	p := &stubPlatformEngine{n: "plain"}
+	agent := &stubModelModeAgent{}
+	e := NewEngine("test", agent, []Platform{p}, "", LangEnglish)
+
+	key := "test:user1"
+	live := &stubLiveServiceTierSession{}
+	state := &interactiveState{agentSession: live, platform: p, replyCtx: "ctx"}
+	e.interactiveMu.Lock()
+	e.interactiveStates[key] = state
+	e.interactiveMu.Unlock()
+
+	session := e.sessions.GetOrCreateActive(key)
+	session.SetAgentSessionID("existing-session", "stub")
+	session.AddHistory("user", "hello")
+
+	e.cmdSpeed(p, &Message{SessionKey: key, ReplyCtx: "ctx"}, []string{"fast"})
+
+	if len(live.tiers) != 1 || live.tiers[0] != "priority" {
+		t.Fatalf("live tiers = %v, want [priority]", live.tiers)
+	}
+	if session.GetAgentSessionID() != "existing-session" {
+		t.Fatalf("agent session id = %q, want existing-session", session.GetAgentSessionID())
+	}
+	if len(session.GetHistory(0)) != 1 {
+		t.Fatalf("history len = %d, want 1", len(session.GetHistory(0)))
+	}
+	e.interactiveMu.Lock()
+	keptState := e.interactiveStates[key]
+	e.interactiveMu.Unlock()
+	if keptState != state {
+		t.Fatal("live service tier update discarded the interactive session")
+	}
+}
+
+func TestCmdSpeed_RejectsUnknownTier(t *testing.T) {
+	p := &stubPlatformEngine{n: "plain"}
+	agent := &stubModelModeAgent{}
+	e := NewEngine("test", agent, []Platform{p}, "", LangEnglish)
+
+	e.cmdSpeed(p, &Message{SessionKey: "test:user1", ReplyCtx: "ctx"}, []string{"turbo"})
+
+	if agent.serviceTier != "" {
+		t.Fatalf("service tier = %q, want unchanged empty", agent.serviceTier)
+	}
+	if len(p.sent) != 1 || !strings.Contains(p.sent[0], "/speed <number|standard|fast>") {
+		t.Fatalf("sent = %v, want speed usage", p.sent)
+	}
+}
+
 // TestCmdReasoning_MultiWorkspaceSavesToWorkspaceSessions is a regression test
 // for the bug where cmdReasoning called e.sessions.Save() (global) instead of
 // sessions.Save() (workspace-resolved), leaving workspace session state unsaved.
@@ -6886,6 +6996,7 @@ type controllableAgentSession struct {
 	closed          chan struct{} // closed when Close() is called
 	model           string
 	reasoningEffort string
+	serviceTier     string
 	workDir         string
 	report          *UsageReport
 	contextUsage    *ContextUsage
@@ -6909,6 +7020,7 @@ func (s *controllableAgentSession) Events() <-chan Event                        
 func (s *controllableAgentSession) CurrentSessionID() string                             { return s.sessionID }
 func (s *controllableAgentSession) GetModel() string                                     { return s.model }
 func (s *controllableAgentSession) GetReasoningEffort() string                           { return s.reasoningEffort }
+func (s *controllableAgentSession) GetServiceTier() string                               { return s.serviceTier }
 func (s *controllableAgentSession) GetWorkDir() string                                   { return s.workDir }
 func (s *controllableAgentSession) GetUsage(_ context.Context) (*UsageReport, error) {
 	if s.report == nil && s.usageErr == nil {

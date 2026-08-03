@@ -44,6 +44,7 @@ Each user gets an independent session with full conversation context. Manage ses
 | `/dir [path]` | Show or switch the agent work directory |
 | `/allow <tool>` | Pre-allow a tool (next session) |
 | `/reasoning [level]` | View or switch reasoning effort (Codex) |
+| `/speed [standard\|fast]` | View or switch Codex response speed |
 | `/mode [name]` | View or switch permission mode |
 | `/stop` | Stop current execution |
 | `/help` | Show available commands |
@@ -248,6 +249,18 @@ alias = "spark"
 ```
 
 When `models` is configured, `/model` shows exactly that list without making an API round-trip. When omitted, models are fetched from the provider API or fall back to a built-in list.
+
+### Codex Response Speed
+
+Codex 0.146.0 and later expose model-specific service tiers. cc-connect reads the effective model catalog and makes the supported choices available through `/speed`:
+
+```text
+/speed             Show the current speed and supported choices
+/speed standard    Use the default service tier
+/speed fast        Use Codex priority processing (increased usage)
+```
+
+The selected tier is passed to both the Codex exec and app-server backends. The reply footer shows the active value as `speed:standard` or `speed:fast`. You can also set the startup value with `service_tier = "default"` or `service_tier = "priority"` under `[projects.agent.options]`.
 
 ---
 

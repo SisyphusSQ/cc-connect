@@ -226,7 +226,7 @@ High-level view of what each **built-in platform** can do in cc-connect.
 **Multi-Bot Relay** — Bind multiple bots in a group chat and let them communicate with each other. Ask Claude, get insights from Gemini — all in one conversation.
 
 ### 🎮 Complete Chat Control
-**Full Control from Chat** — Switch models (`/model`), tune reasoning (`/reasoning`), change permission modes (`/mode`), manage sessions, all via slash commands.
+**Full Control from Chat** — Switch models (`/model`), tune reasoning (`/reasoning`), choose Codex response speed (`/speed`), change permission modes (`/mode`), manage sessions, all via slash commands.
 
 **Directory Switching in Chat** — Change where the next session starts with `/dir <path>` (and `/cd <path>` as a compatibility alias), plus quick history jump via `/dir <number>` / `/dir -`.
 
@@ -467,6 +467,14 @@ start if any gate fails or if the probe detects a cross-user leak.
 ```
 /model                      List available models (format: alias - model)
 /model switch <alias>       Switch to model by alias
+```
+
+### ⚡ Codex Response Speed
+
+```
+/speed                      Show current and supported speeds
+/speed standard             Use the default service tier
+/speed fast                 Use priority processing (increased usage)
 ```
 
 

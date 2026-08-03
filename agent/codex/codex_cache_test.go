@@ -110,3 +110,37 @@ func TestReadCodexModelCatalog_NoConfigFile(t *testing.T) {
 		t.Fatalf("expected 6 hardcoded fallback models, got %d: %v", len(models), models)
 	}
 }
+
+func TestAvailableServiceTiers_UsesModelCatalogFastAlias(t *testing.T) {
+	tmp := t.TempDir()
+	config := "model_catalog_json = \"model_catalog.json\"\nservice_tier = \"priority\"\n"
+	if err := os.WriteFile(tmp+"/config.toml", []byte(config), 0o644); err != nil {
+		t.Fatalf("write config.toml: %v", err)
+	}
+	catalog := `{
+  "models": [{
+    "slug": "gpt-5.6-luna",
+    "service_tiers": [{"id":"priority","name":"Fast","description":"1.5x speed, increased usage"}],
+    "additional_speed_tiers": ["fast"]
+  }]
+}`
+	if err := os.WriteFile(tmp+"/model_catalog.json", []byte(catalog), 0o644); err != nil {
+		t.Fatalf("write model catalog: %v", err)
+	}
+
+	a := &Agent{model: "gpt-5.6-luna", serviceTier: readCodexConfiguredServiceTier(tmp), codexHome: tmp, activeIdx: -1}
+	options := a.AvailableServiceTiers(context.Background())
+
+	if len(options) != 2 {
+		t.Fatalf("service tiers = %+v, want Standard and Fast", options)
+	}
+	if options[0].ID != "default" || options[0].Name != "" {
+		t.Fatalf("first option = %+v, want localized default option", options[0])
+	}
+	if options[1].ID != "priority" || options[1].Name != "Fast" || len(options[1].Aliases) != 1 || options[1].Aliases[0] != "fast" {
+		t.Fatalf("second option = %+v, want Fast/priority alias fast", options[1])
+	}
+	if got := a.GetServiceTier(); got != "priority" {
+		t.Fatalf("GetServiceTier() = %q, want priority from config", got)
+	}
+}

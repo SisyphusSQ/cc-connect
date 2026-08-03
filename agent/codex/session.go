@@ -27,6 +27,7 @@ type codexSession struct {
 	workDir        string
 	model          string
 	effort         string
+	serviceTier    string
 	mode           string
 	baseURL        string   // provider base URL; passed as -c openai_base_url=<url>
 	modelProvider  string   // Codex model_provider name; passed as -c model_provider=<name>
@@ -49,6 +50,7 @@ type codexSession struct {
 	runtimeCfgMu       sync.Mutex
 	runtimeCfgModel    string
 	runtimeCfgEffort   string
+	runtimeCfgTier     string
 	runtimeCfgFetched  time.Time
 	runtimeCfgFetchErr error
 
@@ -264,6 +266,9 @@ func (cs *codexSession) buildExecArgs(prompt string, imagePaths []string) []stri
 	}
 	if cs.effort != "" {
 		args = append(args, "-c", fmt.Sprintf("model_reasoning_effort=%q", cs.effort))
+	}
+	if tier := cs.configuredServiceTier(); tier != "" {
+		args = append(args, "-c", fmt.Sprintf("service_tier=%q", tier))
 	}
 
 	if isResume {
@@ -656,7 +661,7 @@ func codexToolSuccess(status string, exitCode *int) bool {
 	return s == "completed" || s == "success" || s == "succeeded" || s == "ok"
 }
 
-func loadCodexRuntimeConfig(ctx context.Context, workDir string, extraEnv []string) (string, string, error) {
+func loadCodexRuntimeConfig(ctx context.Context, workDir string, extraEnv []string) (string, string, string, error) {
 	cmd := exec.CommandContext(ctx, "codex", "app-server")
 	cmd.Dir = workDir
 	prepareCmdForKill(cmd)
@@ -666,17 +671,17 @@ func loadCodexRuntimeConfig(ctx context.Context, workDir string, extraEnv []stri
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
-		return "", "", fmt.Errorf("runtime config stdin pipe: %w", err)
+		return "", "", "", fmt.Errorf("runtime config stdin pipe: %w", err)
 	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return "", "", fmt.Errorf("runtime config stdout pipe: %w", err)
+		return "", "", "", fmt.Errorf("runtime config stdout pipe: %w", err)
 	}
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 
 	if err := cmd.Start(); err != nil {
-		return "", "", fmt.Errorf("runtime config start app-server: %w", err)
+		return "", "", "", fmt.Errorf("runtime config start app-server: %w", err)
 	}
 	defer func() {
 		_ = stdin.Close()
@@ -696,27 +701,28 @@ func loadCodexRuntimeConfig(ctx context.Context, workDir string, extraEnv []stri
 			"version": "0.1.0",
 		},
 	}, nil); err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 	nextID++
 
 	if err := rpcNotifyOverIO(stdin, "initialized", map[string]any{}); err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 
 	var resp struct {
 		Config struct {
 			Model                string  `json:"model"`
 			ModelReasoningEffort *string `json:"model_reasoning_effort"`
+			ServiceTier          string  `json:"service_tier"`
 		} `json:"config"`
 	}
 	if err := rpcRequestOverIO(stdin, reader, nextID, "config/read", map[string]any{
 		"includeLayers": false,
 	}, &resp); err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 
-	return strings.TrimSpace(resp.Config.Model), normalizeRuntimeReasoningEffort(stringValue(resp.Config.ModelReasoningEffort)), nil
+	return strings.TrimSpace(resp.Config.Model), normalizeRuntimeReasoningEffort(stringValue(resp.Config.ModelReasoningEffort)), normalizeServiceTier(resp.Config.ServiceTier), nil
 }
 
 func rpcRequestOverIO(stdin io.Writer, reader *bufio.Reader, id int64, method string, params any, out any) error {
@@ -806,7 +812,7 @@ func (cs *codexSession) GetModel() string {
 	if model := strings.TrimSpace(cs.model); model != "" {
 		return model
 	}
-	model, _ := cs.runtimeConfig()
+	model, _, _ := cs.runtimeConfig()
 	return model
 }
 
@@ -814,8 +820,30 @@ func (cs *codexSession) GetReasoningEffort() string {
 	if effort := strings.TrimSpace(cs.effort); effort != "" {
 		return effort
 	}
-	_, effort := cs.runtimeConfig()
+	_, effort, _ := cs.runtimeConfig()
 	return effort
+}
+
+func (cs *codexSession) GetServiceTier() string {
+	tier := cs.configuredServiceTier()
+	if tier != "" {
+		return tier
+	}
+	_, _, tier = cs.runtimeConfig()
+	return tier
+}
+
+func (cs *codexSession) configuredServiceTier() string {
+	cs.runtimeCfgMu.Lock()
+	defer cs.runtimeCfgMu.Unlock()
+	return strings.TrimSpace(cs.serviceTier)
+}
+
+func (cs *codexSession) SetLiveServiceTier(tier string) bool {
+	cs.runtimeCfgMu.Lock()
+	cs.serviceTier = normalizeServiceTier(tier)
+	cs.runtimeCfgMu.Unlock()
+	return true
 }
 
 func (cs *codexSession) Alive() bool {
@@ -828,31 +856,32 @@ func (cs *codexSession) GetContextUsage() *core.ContextUsage {
 	return cloneContextUsage(cs.contextUsage)
 }
 
-func (cs *codexSession) runtimeConfig() (string, string) {
+func (cs *codexSession) runtimeConfig() (string, string, string) {
 	cs.runtimeCfgMu.Lock()
 	defer cs.runtimeCfgMu.Unlock()
 
 	if !cs.runtimeCfgFetched.IsZero() && time.Since(cs.runtimeCfgFetched) < codexRuntimeConfigCacheTTL {
-		return cs.runtimeCfgModel, cs.runtimeCfgEffort
+		return cs.runtimeCfgModel, cs.runtimeCfgEffort, cs.runtimeCfgTier
 	}
 
 	ctx, cancel := context.WithTimeout(cs.ctx, codexRuntimeConfigTimeout)
 	defer cancel()
 
-	model, effort, err := loadCodexRuntimeConfig(ctx, cs.workDir, cs.extraEnv)
+	model, effort, tier, err := loadCodexRuntimeConfig(ctx, cs.workDir, cs.extraEnv)
 	if err == nil {
 		cs.runtimeCfgModel = model
 		cs.runtimeCfgEffort = effort
+		cs.runtimeCfgTier = tier
 		cs.runtimeCfgFetchErr = nil
 		cs.runtimeCfgFetched = time.Now()
-		return model, effort
+		return model, effort, tier
 	}
 
 	cs.runtimeCfgFetchErr = err
 	if !cs.runtimeCfgFetched.IsZero() {
-		return cs.runtimeCfgModel, cs.runtimeCfgEffort
+		return cs.runtimeCfgModel, cs.runtimeCfgEffort, cs.runtimeCfgTier
 	}
-	return "", ""
+	return "", "", ""
 }
 
 func (cs *codexSession) refreshContextUsageFromRollout() {
