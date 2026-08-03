@@ -2886,6 +2886,46 @@ func (p *Platform) sendMediaMessage(ctx context.Context, rc replyContext, msgTyp
 	return p.createMessage(ctx, rc.chatID, msgType, content, "send media message")
 }
 
+func (p *Platform) sendMediaMessageWithReceipt(ctx context.Context, rc replyContext, msgType, content, kind, fileName string) (core.DeliveryReceipt, error) {
+	if p.shouldUseThreadOrReplyAPI(rc) {
+		resp, err := p.replyMessageResponse(ctx, rc, msgType, content)
+		if err != nil {
+			return core.DeliveryReceipt{}, err
+		}
+		if resp.Data == nil {
+			return core.DeliveryReceipt{}, fmt.Errorf("%s: reply returned no message data", p.tag())
+		}
+		return newFeishuDeliveryReceipt(kind, fileName, rc.chatID, resp.Data.MessageId, resp.Data.ChatId)
+	}
+	resp, err := p.createMessageResponse(ctx, rc.chatID, msgType, content, "send media message")
+	if err != nil {
+		return core.DeliveryReceipt{}, err
+	}
+	if resp.Data == nil {
+		return core.DeliveryReceipt{}, fmt.Errorf("%s: create returned no message data", p.tag())
+	}
+	return newFeishuDeliveryReceipt(kind, fileName, rc.chatID, resp.Data.MessageId, resp.Data.ChatId)
+}
+
+func newFeishuDeliveryReceipt(kind, fileName, fallbackChatID string, messageID, chatID *string) (core.DeliveryReceipt, error) {
+	if messageID == nil || strings.TrimSpace(*messageID) == "" {
+		return core.DeliveryReceipt{}, fmt.Errorf("feishu delivery response has no message_id")
+	}
+	resolvedChatID := fallbackChatID
+	if chatID != nil && strings.TrimSpace(*chatID) != "" {
+		resolvedChatID = strings.TrimSpace(*chatID)
+	}
+	return core.DeliveryReceipt{
+		Platform:         "feishu",
+		Kind:             kind,
+		MessageID:        strings.TrimSpace(*messageID),
+		ChatID:           resolvedChatID,
+		FileName:         fileName,
+		Native:           true,
+		ReceiptAvailable: true,
+	}, nil
+}
+
 func detectFeishuFileType(mimeType, fileName string) string {
 	name := strings.ToLower(fileName)
 	switch {
@@ -3525,11 +3565,17 @@ func (p *Platform) buildReplyMessageReqBody(rc replyContext, msgType, content st
 }
 
 func (p *Platform) replyMessage(ctx context.Context, rc replyContext, msgType, content string) error {
+	_, err := p.replyMessageResponse(ctx, rc, msgType, content)
+	return err
+}
+
+func (p *Platform) replyMessageResponse(ctx context.Context, rc replyContext, msgType, content string) (*larkim.ReplyMessageResp, error) {
 	req := larkim.NewReplyMessageReqBuilder().
 		MessageId(rc.messageID).
 		Body(p.buildReplyMessageReqBody(rc, msgType, content)).
 		Build()
-	return p.withTransientRetry(ctx, "reply", func() error {
+	var response *larkim.ReplyMessageResp
+	err := p.withTransientRetry(ctx, "reply", func() error {
 		return p.withFreshTenantAccessTokenRetry(ctx, "reply", func(client *lark.Client, options ...larkcore.RequestOptionFunc) error {
 			resp, err := client.Im.Message.Reply(ctx, req, options...)
 			if err != nil {
@@ -3538,12 +3584,19 @@ func (p *Platform) replyMessage(ctx context.Context, rc replyContext, msgType, c
 			if !resp.Success() {
 				return fmt.Errorf("%s: reply failed code=%d msg=%s", p.tag(), resp.Code, resp.Msg)
 			}
+			response = resp
 			return nil
 		})
 	})
+	return response, err
 }
 
 func (p *Platform) createMessage(ctx context.Context, chatID, msgType, content, op string) error {
+	_, err := p.createMessageResponse(ctx, chatID, msgType, content, op)
+	return err
+}
+
+func (p *Platform) createMessageResponse(ctx context.Context, chatID, msgType, content, op string) (*larkim.CreateMessageResp, error) {
 	req := larkim.NewCreateMessageReqBuilder().
 		ReceiveIdType(larkim.ReceiveIdTypeChatId).
 		Body(larkim.NewCreateMessageReqBodyBuilder().
@@ -3552,7 +3605,8 @@ func (p *Platform) createMessage(ctx context.Context, chatID, msgType, content, 
 			Content(content).
 			Build()).
 		Build()
-	return p.withTransientRetry(ctx, op, func() error {
+	var response *larkim.CreateMessageResp
+	err := p.withTransientRetry(ctx, op, func() error {
 		return p.withFreshTenantAccessTokenRetry(ctx, op, func(client *lark.Client, options ...larkcore.RequestOptionFunc) error {
 			resp, err := client.Im.Message.Create(ctx, req, options...)
 			if err != nil {
@@ -3561,9 +3615,11 @@ func (p *Platform) createMessage(ctx context.Context, chatID, msgType, content, 
 			if !resp.Success() {
 				return fmt.Errorf("%s: %s failed code=%d msg=%s", p.tag(), op, resp.Code, resp.Msg)
 			}
+			response = resp
 			return nil
 		})
 	})
+	return response, err
 }
 
 func (p *Platform) withFreshTenantAccessTokenRetry(ctx context.Context, operation string, fn feishuRequestFunc) error {
@@ -4798,9 +4854,16 @@ func (p *Platform) SendAudio(ctx context.Context, rctx any, audio []byte, format
 // a download tile on some clients. The fallback path to SendFile in
 // engine.go preserves at least delivery when this happens.
 func (p *Platform) SendVideo(ctx context.Context, rctx any, video []byte, format string, fileName string) error {
+	_, err := p.SendVideoWithReceipt(ctx, rctx, video, format, fileName)
+	return err
+}
+
+// SendVideoWithReceipt uploads a video and returns Feishu's remote message
+// identity for durable delivery reconciliation.
+func (p *Platform) SendVideoWithReceipt(ctx context.Context, rctx any, video []byte, format string, fileName string) (core.DeliveryReceipt, error) {
 	rc, ok := rctx.(replyContext)
 	if !ok {
-		return fmt.Errorf("%s: SendVideo: invalid reply context type %T", p.tag(), rctx)
+		return core.DeliveryReceipt{}, fmt.Errorf("%s: SendVideo: invalid reply context type %T", p.tag(), rctx)
 	}
 	if fileName == "" {
 		if format != "" {
@@ -4831,10 +4894,10 @@ func (p *Platform) SendVideo(ctx context.Context, rctx any, video []byte, format
 			return nil
 		})
 	}); err != nil {
-		return err
+		return core.DeliveryReceipt{}, err
 	}
 	if uploadResp.Data == nil || uploadResp.Data.FileKey == nil {
-		return fmt.Errorf("%s: upload video: no file_key returned", p.tag())
+		return core.DeliveryReceipt{}, fmt.Errorf("%s: upload video: no file_key returned", p.tag())
 	}
 	fileKey := *uploadResp.Data.FileKey
 
@@ -4843,10 +4906,10 @@ func (p *Platform) SendVideo(ctx context.Context, rctx any, video []byte, format
 	mediaMsg := larkim.MessageMedia{FileKey: fileKey}
 	mediaContent, err := mediaMsg.String()
 	if err != nil {
-		return fmt.Errorf("%s: build video message: %w", p.tag(), err)
+		return core.DeliveryReceipt{}, fmt.Errorf("%s: build video message: %w", p.tag(), err)
 	}
 
-	return p.sendMediaMessage(ctx, rc, larkim.MsgTypeMedia, mediaContent)
+	return p.sendMediaMessageWithReceipt(ctx, rc, larkim.MsgTypeMedia, mediaContent, "video", fileName)
 }
 
 type postElement struct {

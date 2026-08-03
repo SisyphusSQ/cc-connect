@@ -538,6 +538,7 @@ cc-connect send --tts "你好"
 - [INSTALL.md](INSTALL.md) — AI Agent 友好的安装指南
 - [config.example.toml](config.example.toml) — 配置模板
 - [CONTRIBUTING.md](CONTRIBUTING.md) — Issue / PR 提交流程与贡献说明
+- [UPSTREAM_SYNC.md](UPSTREAM_SYNC.md) — 上游稳定版本同步与本地差异维护规范
 
 
 ## 👥 社区

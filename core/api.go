@@ -62,6 +62,13 @@ type SendRequest struct {
 	AtAll      bool              `json:"at_all,omitempty"`
 }
 
+// SendResponse is returned by POST /send. Deliveries is populated for video
+// attachments so automation can persist remote message identities.
+type SendResponse struct {
+	Status     string            `json:"status"`
+	Deliveries []DeliveryReceipt `json:"deliveries,omitempty"`
+}
+
 // NewAPIServer creates an API server on a Unix socket.
 func NewAPIServer(dataDir string) (*APIServer, error) {
 	sockDir := filepath.Join(dataDir, "run")
@@ -266,8 +273,11 @@ func (s *APIServer) handleSend(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	var deliveries []DeliveryReceipt
 	if len(req.Videos) > 0 {
-		if err := engine.SendVideosToSession(req.SessionKey, req.Videos); err != nil {
+		var err error
+		deliveries, err = engine.SendVideosToSessionWithReceipts(req.SessionKey, req.Videos)
+		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -280,7 +290,7 @@ func (s *APIServer) handleSend(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	apiJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	apiJSON(w, http.StatusOK, SendResponse{Status: "ok", Deliveries: deliveries})
 }
 
 func (s *APIServer) handleSessions(w http.ResponseWriter, r *http.Request) {

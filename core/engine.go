@@ -11274,41 +11274,76 @@ func (e *Engine) SendAudiosToSession(sessionKey string, audios []FileAttachment)
 // platform's VideoSender (native video bubble) when supported, falling
 // back to FileSender otherwise. Used by `cc-connect send --video`.
 func (e *Engine) SendVideosToSession(sessionKey string, videos []FileAttachment) error {
+	_, err := e.SendVideosToSessionWithReceipts(sessionKey, videos)
+	return err
+}
+
+// SendVideosToSessionWithReceipts sends videos and returns one delivery
+// receipt per input, preserving compatibility for platforms that only expose
+// VideoSender or FileSender while clearly marking unavailable remote IDs.
+func (e *Engine) SendVideosToSessionWithReceipts(sessionKey string, videos []FileAttachment) ([]DeliveryReceipt, error) {
 	if len(videos) == 0 {
-		return nil
+		return nil, nil
 	}
 	_, p, replyCtx, err := e.resolveOutboundSessionTarget(sessionKey, true)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if !e.attachmentSendEnabled {
-		return ErrAttachmentSendDisabled
+		return nil, ErrAttachmentSendDisabled
 	}
 
+	videoReceiptSender, receiptOK := p.(VideoReceiptSender)
 	videoSender, videoOK := p.(VideoSender)
 	fileSender, fileOK := p.(FileSender)
-	if !videoOK && !fileOK {
-		return fmt.Errorf("platform %s: %w", p.Name(), ErrNotSupported)
+	if !receiptOK && !videoOK && !fileOK {
+		return nil, fmt.Errorf("platform %s: %w", p.Name(), ErrNotSupported)
 	}
 
+	receipts := make([]DeliveryReceipt, 0, len(videos))
 	for _, v := range videos {
 		if err := e.waitOutgoing(p); err != nil {
-			return err
+			return nil, err
 		}
 		format := videoFormatHint(v)
+		if receiptOK {
+			receipt, err := videoReceiptSender.SendVideoWithReceipt(e.ctx, replyCtx, v.Data, format, v.FileName)
+			if err != nil {
+				return nil, err
+			}
+			if receipt.Platform == "" {
+				receipt.Platform = p.Name()
+			}
+			if receipt.Kind == "" {
+				receipt.Kind = "video"
+			}
+			if receipt.FileName == "" {
+				receipt.FileName = v.FileName
+			}
+			receipts = append(receipts, receipt)
+			continue
+		}
 		if videoOK {
 			if err := videoSender.SendVideo(e.ctx, replyCtx, v.Data, format, v.FileName); err != nil {
-				return err
+				return nil, err
 			}
+			receipts = append(receipts, DeliveryReceipt{
+				Platform: p.Name(), Kind: "video", FileName: v.FileName,
+				Native: true, ReceiptAvailable: false,
+			})
 			continue
 		}
 		slog.Warn("send: platform has no VideoSender, falling back to SendFile",
 			"platform", p.Name(), "file_name", v.FileName, "format", format)
 		if err := fileSender.SendFile(e.ctx, replyCtx, v); err != nil {
-			return err
+			return nil, err
 		}
+		receipts = append(receipts, DeliveryReceipt{
+			Platform: p.Name(), Kind: "video", FileName: v.FileName,
+			Native: false, ReceiptAvailable: false,
+		})
 	}
-	return nil
+	return receipts, nil
 }
 
 // audioFormatHint extracts the short format hint (e.g. "mp3", "opus")

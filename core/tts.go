@@ -83,6 +83,26 @@ type VideoSender interface {
 	SendVideo(ctx context.Context, replyCtx any, video []byte, format string, fileName string) error
 }
 
+// DeliveryReceipt is the machine-readable identity of a successful outbound
+// delivery. ReceiptAvailable is false when a compatibility fallback can only
+// prove that the platform call returned successfully, not the remote message
+// identity.
+type DeliveryReceipt struct {
+	Platform         string `json:"platform"`
+	Kind             string `json:"kind"`
+	MessageID        string `json:"message_id,omitempty"`
+	ChatID           string `json:"chat_id,omitempty"`
+	FileName         string `json:"file_name,omitempty"`
+	Native           bool   `json:"native"`
+	ReceiptAvailable bool   `json:"receipt_available"`
+}
+
+// VideoReceiptSender extends VideoSender for platforms that can return the
+// remote message identity after sending a native video.
+type VideoReceiptSender interface {
+	SendVideoWithReceipt(ctx context.Context, replyCtx any, video []byte, format string, fileName string) (DeliveryReceipt, error)
+}
+
 // ──────────────────────────────────────────────────────────────
 // QwenTTS — Alibaba DashScope TTS implementation
 // ──────────────────────────────────────────────────────────────
