@@ -699,7 +699,7 @@ speed = 0.96
 attachment_send = "off"
 ```
 
-默认值是 `on`。这个开关与 agent 的 `/mode` 独立，只影响 `cc-connect send --image/--file` 这条图片/文件回传路径。TTS 语音回传走 `[tts]` provider 配置，由 TTS 是否可用决定。
+默认值是 `on`。这个开关与 agent 的 `/mode` 独立，控制 `cc-connect send --image/--file/--audio/--video` 的附件回传。TTS 合成还受 `[tts]` provider 配置控制。
 
 ### CLI 用法
 
@@ -707,15 +707,18 @@ attachment_send = "off"
 cc-connect send --image /absolute/path/to/chart.png
 cc-connect send --file /absolute/path/to/report.pdf
 cc-connect send --file /absolute/path/to/report.pdf --image /absolute/path/to/chart.png
+cc-connect send --video /absolute/path/to/final.mp4 --json
 cc-connect send --tts "你好"
 ```
 
 说明：
 - `--image` 用于图片附件。
 - `--file` 用于任意文件附件。
+- `--audio`、`--video` 分别走平台原生音频/视频消息能力。
+- `--json` 输出结构化发送结果。飞书原生视频回执包含 `chat_id`、`message_id`；兼容回退会明确返回 `receipt_available: false`，不能当作远端消息身份凭证。
 - `--tts` 会合成文本并通过当前 TTS provider 发送语音。
 - `--message` 可选，用于先发一段说明文字，再发附件。
-- `--image` 和 `--file` 都可以重复多次。
+- 四种附件参数都可以重复多次。
 - 建议使用绝对路径，避免 Agent 当前工作目录变化导致找不到文件。
 - 如果设置了 `attachment_send = "off"`，图片/文件回传会被拒绝，但普通文本回复仍然正常。
 - 每个附件默认上限 **50 MiB**。可在 config.toml 用 `max_attachment_size_mb`（单位 MiB）调整，或用环境变量 `CC_MAX_ATTACHMENT_SIZE_MB` 覆盖该值（同样单位 MiB，设置后优先级更高），例如 `CC_MAX_ATTACHMENT_SIZE_MB=100 cc-connect send --file big.bin`。

@@ -62,6 +62,29 @@ func TestOnMessageRecalledDispatchesCoreRecallMessage(t *testing.T) {
 	}
 }
 
+func TestNewFeishuDeliveryReceiptUsesResponseIdentity(t *testing.T) {
+	messageID := "om_video_1"
+	chatID := "oc_group_1"
+	receipt, err := newFeishuDeliveryReceipt(
+		"video", "demo.mp4", "oc_fallback", &messageID, &chatID,
+	)
+	if err != nil {
+		t.Fatalf("newFeishuDeliveryReceipt returned error: %v", err)
+	}
+	if receipt.MessageID != messageID || receipt.ChatID != chatID {
+		t.Fatalf("receipt = %#v", receipt)
+	}
+	if !receipt.Native || !receipt.ReceiptAvailable {
+		t.Fatalf("receipt flags = %#v", receipt)
+	}
+}
+
+func TestNewFeishuDeliveryReceiptRejectsMissingMessageID(t *testing.T) {
+	if _, err := newFeishuDeliveryReceipt("video", "demo.mp4", "oc_group", nil, nil); err == nil {
+		t.Fatal("expected missing message ID error")
+	}
+}
+
 func TestDispatchMessageDropsRecalledMessageBeforeHandler(t *testing.T) {
 	called := false
 	p := &Platform{

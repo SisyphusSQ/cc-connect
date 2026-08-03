@@ -628,7 +628,7 @@ You can control this feature globally in `config.toml`:
 attachment_send = "on"  # default: "on"; set to "off" to block image/file send-back
 ```
 
-This switch is independent from the agent's `/mode`. It only controls `cc-connect send --image/--file`. Voice send-back uses the TTS config instead.
+This switch is independent from the agent's `/mode`. It controls `cc-connect send --image/--file/--audio/--video`. TTS synthesis uses the TTS config as well.
 
 Examples:
 
@@ -636,6 +636,7 @@ Examples:
 cc-connect send --image /absolute/path/to/chart.png
 cc-connect send --file /absolute/path/to/report.pdf
 cc-connect send --file /absolute/path/to/report.pdf --image /absolute/path/to/chart.png
+cc-connect send --video /absolute/path/to/final.mp4 --json
 cc-connect send --tts "Hello from cc-connect"
 ```
 
@@ -643,6 +644,7 @@ Notes:
 - Absolute paths are the safest option.
 - `--image` and `--file` can both be repeated.
 - `--tts` sends synthesized speech when the user asks for a voice reply.
+- `--json` prints delivery receipts. Feishu native-video receipts include `chat_id` and `message_id`; compatibility fallbacks explicitly report `receipt_available: false`.
 - `attachment_send = "off"` disables only attachment send-back; ordinary text replies still work.
 - Attachments are capped at 50 MiB by default; configure with `max_attachment_size_mb` (or `CC_MAX_ATTACHMENT_SIZE_MB` env, same MiB unit).
 - This command is for generated attachments, not ordinary text replies.
@@ -656,6 +658,7 @@ Notes:
 - [INSTALL.md](INSTALL.md) — AI-agent-friendly installation guide
 - [config.example.toml](config.example.toml) — Configuration template
 - [CONTRIBUTING.md](CONTRIBUTING.md) — How to report issues and contribute pull requests
+- [UPSTREAM_SYNC.md](UPSTREAM_SYNC.md) — Upstream stable-version sync and fork-difference maintenance
 
 
 ## 👥 Community

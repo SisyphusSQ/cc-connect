@@ -786,7 +786,7 @@ Add this to `config.toml` if you want to disable agent-driven attachment send-ba
 attachment_send = "off"
 ```
 
-The default is `on`. This switch is independent from the agent's `/mode` and only affects `cc-connect send --image/--file`. Synthesized voice send-back uses the `[tts]` provider config and is controlled by TTS availability instead.
+The default is `on`. This switch is independent from the agent's `/mode` and controls `cc-connect send --image/--file/--audio/--video`. TTS synthesis is additionally controlled by the `[tts]` provider configuration.
 
 ### CLI examples
 
@@ -794,15 +794,18 @@ The default is `on`. This switch is independent from the agent's `/mode` and onl
 cc-connect send --image /absolute/path/to/chart.png
 cc-connect send --file /absolute/path/to/report.pdf
 cc-connect send --file /absolute/path/to/report.pdf --image /absolute/path/to/chart.png
+cc-connect send --video /absolute/path/to/final.mp4 --json
 cc-connect send --tts "Hello from cc-connect"
 ```
 
 Notes:
 - `--image` is for image attachments.
 - `--file` is for any file attachment.
+- `--audio` and `--video` use native platform media messages when supported.
+- `--json` prints a structured result. Native Feishu video receipts include `chat_id` and `message_id`; compatibility fallbacks explicitly set `receipt_available: false` and do not prove a remote message identity.
 - `--tts` synthesizes text and sends the generated audio through the active TTS provider.
 - `--message` is optional and sends a text note before the attachments.
-- `--image` and `--file` can both be repeated.
+- All four attachment flags can be repeated.
 - Absolute paths are recommended so the command does not depend on the agent's current working directory.
 - With `attachment_send = "off"`, image/file send-back is blocked but ordinary text replies still work.
 - Each attachment is capped at **50 MiB** by default. Configure it with `max_attachment_size_mb` (MiB) in config.toml, or override that value with the `CC_MAX_ATTACHMENT_SIZE_MB` env var (same MiB unit; takes precedence when set), e.g. `CC_MAX_ATTACHMENT_SIZE_MB=100 cc-connect send --file big.bin`.

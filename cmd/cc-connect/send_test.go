@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -145,6 +146,31 @@ func TestParseSendArgs_VideoPopulatesVideos(t *testing.T) {
 	}
 	if req.Videos[0].FileName != "demo.mp4" {
 		t.Fatalf("video filename = %q, want demo.mp4", req.Videos[0].FileName)
+	}
+}
+
+func TestExtractSendOutputMode_JSONFlag(t *testing.T) {
+	filtered, jsonOutput := extractSendOutputMode([]string{"--json", "--video", "demo.mp4"})
+	if !jsonOutput {
+		t.Fatal("jsonOutput = false, want true")
+	}
+	if got := strings.Join(filtered, " "); got != "--video demo.mp4" {
+		t.Fatalf("filtered args = %q", got)
+	}
+}
+
+func TestFormatSendSuccess_JSONPreservesDeliveryReceipt(t *testing.T) {
+	body := []byte(`{"status":"ok","deliveries":[{"platform":"feishu","kind":"video","message_id":"om_1","chat_id":"oc_1","receipt_available":true}]}`)
+	got, err := formatSendSuccess(body, true)
+	if err != nil {
+		t.Fatalf("formatSendSuccess returned error: %v", err)
+	}
+	var response core.SendResponse
+	if err := json.Unmarshal([]byte(got), &response); err != nil {
+		t.Fatalf("decode formatted response: %v", err)
+	}
+	if len(response.Deliveries) != 1 || response.Deliveries[0].MessageID != "om_1" {
+		t.Fatalf("response = %#v", response)
 	}
 }
 

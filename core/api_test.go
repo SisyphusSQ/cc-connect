@@ -91,6 +91,41 @@ func TestHandleSend_AllowsTTSTextOnly(t *testing.T) {
 	}
 }
 
+func TestHandleSend_VideoResponseIncludesDeliveryReceipt(t *testing.T) {
+	platform := &audioVideoStubPlatform{stubMediaPlatform: stubMediaPlatform{stubPlatformEngine: stubPlatformEngine{n: "feishu"}}}
+	engine := NewEngine("test", &stubAgent{}, []Platform{platform}, "", LangEnglish)
+	engine.interactiveStates["session-video"] = &interactiveState{platform: platform, replyCtx: "reply-ctx"}
+	api := &APIServer{engines: map[string]*Engine{"test": engine}}
+	body, err := json.Marshal(SendRequest{
+		Project:    "test",
+		SessionKey: "session-video",
+		Videos: []FileAttachment{{
+			MimeType: "video/mp4",
+			Data:     []byte("video"),
+			FileName: "demo.mp4",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/send", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	api.handleSend(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	var response SendResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.Status != "ok" || len(response.Deliveries) != 1 {
+		t.Fatalf("response = %#v", response)
+	}
+	if response.Deliveries[0].MessageID != "om_video_1" {
+		t.Fatalf("delivery = %#v", response.Deliveries[0])
+	}
+}
+
 // TestHandleSend_UnknownProjectReturns404 ensures the API does NOT silently
 // fall back to the only registered engine when the caller named a different
 // project. Previously a typo'd project name routed messages to whatever

@@ -15976,6 +15976,17 @@ type videoCall struct {
 	fileName string
 }
 
+type receiptOnlyVideoPlatform struct {
+	stubPlatformEngine
+}
+
+func (p *receiptOnlyVideoPlatform) SendVideoWithReceipt(_ context.Context, _ any, _ []byte, _ string, fileName string) (DeliveryReceipt, error) {
+	return DeliveryReceipt{
+		Platform: p.Name(), MessageID: "om_receipt_only", ChatID: "oc_group",
+		Kind: "video", FileName: fileName, Native: true, ReceiptAvailable: true,
+	}, nil
+}
+
 func (p *audioVideoStubPlatform) SendAudio(_ context.Context, _ any, audio []byte, format string) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -15988,6 +15999,21 @@ func (p *audioVideoStubPlatform) SendVideo(_ context.Context, _ any, video []byt
 	defer p.mu.Unlock()
 	p.videos = append(p.videos, videoCall{data: append([]byte(nil), video...), format: format, fileName: fileName})
 	return nil
+}
+
+func (p *audioVideoStubPlatform) SendVideoWithReceipt(_ context.Context, _ any, video []byte, format string, fileName string) (DeliveryReceipt, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.videos = append(p.videos, videoCall{data: append([]byte(nil), video...), format: format, fileName: fileName})
+	return DeliveryReceipt{
+		Platform:         p.Name(),
+		Kind:             "video",
+		MessageID:        "om_video_1",
+		ChatID:           "oc_group_1",
+		FileName:         fileName,
+		Native:           true,
+		ReceiptAvailable: true,
+	}, nil
 }
 
 func TestSendAudiosToSession_RoutesToSendAudio_NotSendFile(t *testing.T) {
@@ -16095,6 +16121,41 @@ func TestSendVideosToSession_RoutesToSendVideo_NotSendFile(t *testing.T) {
 	}
 	if len(p.files) != 0 {
 		t.Errorf("SendFile called %d times, want 0 (video must not fall back when VideoSender exists)", len(p.files))
+	}
+}
+
+func TestSendVideosToSessionWithReceipts_ReturnsPlatformMessageIdentity(t *testing.T) {
+	p := &audioVideoStubPlatform{stubMediaPlatform: stubMediaPlatform{stubPlatformEngine: stubPlatformEngine{n: "feishu"}}}
+	e := NewEngine("test", &stubAgent{}, []Platform{p}, "", LangEnglish)
+	e.interactiveStates["session-video-receipt"] = &interactiveState{platform: p, replyCtx: "ctx"}
+
+	receipts, err := e.SendVideosToSessionWithReceipts("session-video-receipt", []FileAttachment{
+		{MimeType: "video/mp4", Data: []byte("mp4-bytes"), FileName: "demo.mp4"},
+	})
+	if err != nil {
+		t.Fatalf("SendVideosToSessionWithReceipts returned error: %v", err)
+	}
+	if len(receipts) != 1 {
+		t.Fatalf("receipts len = %d, want 1", len(receipts))
+	}
+	if got := receipts[0]; got.MessageID != "om_video_1" || got.ChatID != "oc_group_1" || !got.ReceiptAvailable {
+		t.Fatalf("receipt = %#v", got)
+	}
+}
+
+func TestSendVideosToSessionWithReceipts_AcceptsReceiptOnlyPlatform(t *testing.T) {
+	p := &receiptOnlyVideoPlatform{stubPlatformEngine: stubPlatformEngine{n: "receipt-only"}}
+	e := NewEngine("test", &stubAgent{}, []Platform{p}, "", LangEnglish)
+	e.interactiveStates["session-receipt-only"] = &interactiveState{platform: p, replyCtx: "ctx"}
+
+	receipts, err := e.SendVideosToSessionWithReceipts("session-receipt-only", []FileAttachment{{
+		MimeType: "video/mp4", Data: []byte("mp4"), FileName: "demo.mp4",
+	}})
+	if err != nil {
+		t.Fatalf("SendVideosToSessionWithReceipts returned error: %v", err)
+	}
+	if len(receipts) != 1 || receipts[0].MessageID != "om_receipt_only" {
+		t.Fatalf("receipts = %#v", receipts)
 	}
 }
 

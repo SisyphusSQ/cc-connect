@@ -19,6 +19,7 @@ import (
 )
 
 func runSend(args []string) {
+	args, jsonOutput := extractSendOutputMode(args)
 	req, dataDir, err := parseSendArgs(args)
 	if err != nil {
 		if errors.Is(err, errSendUsage) {
@@ -63,7 +64,43 @@ func runSend(args []string) {
 		os.Exit(1)
 	}
 
-	fmt.Println("Message sent successfully.")
+	output, err := formatSendSuccess(body, jsonOutput)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: invalid send response: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println(output)
+}
+
+func extractSendOutputMode(args []string) ([]string, bool) {
+	filtered := make([]string, 0, len(args))
+	jsonOutput := false
+	for _, arg := range args {
+		if arg == "--json" {
+			jsonOutput = true
+			continue
+		}
+		filtered = append(filtered, arg)
+	}
+	return filtered, jsonOutput
+}
+
+func formatSendSuccess(body []byte, jsonOutput bool) (string, error) {
+	var response core.SendResponse
+	if err := json.Unmarshal(body, &response); err != nil {
+		return "", err
+	}
+	if response.Status != "ok" {
+		return "", fmt.Errorf("unexpected status %q", response.Status)
+	}
+	if !jsonOutput {
+		return "Message sent successfully.", nil
+	}
+	encoded, err := json.Marshal(response)
+	if err != nil {
+		return "", err
+	}
+	return string(encoded), nil
 }
 
 var errSendUsage = errors.New("show send usage")
@@ -379,6 +416,7 @@ Options:
       --file <path>        Send a file attachment (repeatable)
       --audio <path>       Send an audio attachment (repeatable)
       --video <path>       Send a video attachment (repeatable)
+      --json               Print the structured send response and delivery receipts
       --stdin              Read message from stdin (best for long/special-char messages)
       --at-users <ids>     @ user IDs, comma-separated (DingTalk)
       --at-all             @ everyone (DingTalk)
