@@ -113,25 +113,27 @@ type replyContext struct {
 }
 
 type Platform struct {
-	mu                         sync.RWMutex
-	platformName               string
-	domain                     string
-	appID                      string
-	appSecret                  string
-	progressStyle              string
-	useInteractiveCard         bool
-	self                       core.Platform
-	reactionEmoji              string
-	doneEmoji                  string
-	allowFrom                  string
-	groupAllowFrom             string
-	privateAllowFrom           string
-	allowChat                  string
-	groupOnly                  bool
-	groupReplyAll              bool
-	respondToAtEveryoneAndHere bool
-	shareSessionInChannel      bool
-	threadIsolation            bool
+	mu                           sync.RWMutex
+	platformName                 string
+	domain                       string
+	appID                        string
+	appSecret                    string
+	progressStyle                string
+	useInteractiveCard           bool
+	self                         core.Platform
+	reactionEmoji                string
+	doneEmoji                    string
+	allowFrom                    string
+	groupAllowFrom               string
+	privateAllowFrom             string
+	allowChat                    string
+	groupOnly                    bool
+	groupReplyAll                bool
+	respondToAtEveryoneAndHere   bool
+	shareSessionInChannel        bool
+	threadIsolation              bool
+	threadFollowupWithoutMention bool
+	sessionActivationStore       core.SessionActivationStore
 	// noReplyToTrigger: when true, send via Create instead of Im.Message.Reply (no quote to the user's message).
 	noReplyToTrigger bool
 	resolveMentions  bool
@@ -163,12 +165,11 @@ type Platform struct {
 	// session key, enabling async card refreshes via the Patch API.
 	cardActionMsgMu  sync.Mutex
 	cardActionMsgIDs map[string]string // sessionKey → messageID
-	// activeThreadSessions tracks thread sessionKeys that have already been
-	// accepted by the bot. In group chats with thread_isolation, once a thread
-	// has been engaged (the first @bot message), subsequent attachment-only
-	// messages (image/file/audio) inside the same thread are passed through
-	// without requiring another @bot mention. Value is the last-seen time so
-	// stale entries can be expired by a future TTL sweep if needed.
+	// activeThreadSessions tracks thread sessionKeys that have been explicitly
+	// engaged with an @bot message. Attachment-only user messages are always
+	// admitted in an active thread; thread_followup_without_mention extends that
+	// behavior to text and rich-text user follow-ups. Value is the activation
+	// time so stale entries can be expired by a future TTL sweep if needed.
 	activeThreadSessions sync.Map // sessionKey -> time.Time
 
 	richCardImageMu         sync.Mutex
@@ -324,6 +325,7 @@ func newPlatform(name, domain string, opts map[string]any) (core.Platform, error
 	respondToAtEveryoneAndHere, _ := opts["respond_to_at_everyone_and_here"].(bool)
 	shareSessionInChannel, _ := opts["share_session_in_channel"].(bool)
 	threadIsolation, _ := opts["thread_isolation"].(bool)
+	threadFollowupWithoutMention, _ := opts["thread_followup_without_mention"].(bool)
 	resolveMentionsOpt, _ := opts["resolve_mentions"].(bool)
 	noReplyToTrigger := false
 	if v, ok := opts["reply_to_trigger"].(bool); ok && !v {
@@ -384,34 +386,35 @@ func newPlatform(name, domain string, opts map[string]any) (core.Platform, error
 	}
 
 	base := &Platform{
-		platformName:               name,
-		domain:                     domain,
-		appID:                      appID,
-		appSecret:                  appSecret,
-		progressStyle:              progressStyle,
-		useInteractiveCard:         useInteractiveCard,
-		reactionEmoji:              reactionEmoji,
-		doneEmoji:                  doneEmoji,
-		allowFrom:                  allowFrom,
-		groupAllowFrom:             groupAllowFrom,
-		privateAllowFrom:           privateAllowFrom,
-		allowChat:                  allowChat,
-		groupOnly:                  groupOnly,
-		groupReplyAll:              groupReplyAll,
-		respondToAtEveryoneAndHere: respondToAtEveryoneAndHere,
-		shareSessionInChannel:      shareSessionInChannel,
-		threadIsolation:            threadIsolation,
-		resolveMentions:            resolveMentionsOpt,
-		noReplyToTrigger:           noReplyToTrigger,
-		client:                     lark.NewClient(appID, appSecret, clientOpts...),
-		replayClient:               newFeishuReplayClient(appID, appSecret, domain),
-		dedup:                      &core.MessageDedup{},
-		port:                       port,
-		callbackPath:               callbackPath,
-		encryptKey:                 encryptKey,
-		peerBots:                   peerBots,
-		imageBatch:                 make(map[string]*imageBatchEntry),
-		imageBatchWindow:           imageBatchWindow,
+		platformName:                 name,
+		domain:                       domain,
+		appID:                        appID,
+		appSecret:                    appSecret,
+		progressStyle:                progressStyle,
+		useInteractiveCard:           useInteractiveCard,
+		reactionEmoji:                reactionEmoji,
+		doneEmoji:                    doneEmoji,
+		allowFrom:                    allowFrom,
+		groupAllowFrom:               groupAllowFrom,
+		privateAllowFrom:             privateAllowFrom,
+		allowChat:                    allowChat,
+		groupOnly:                    groupOnly,
+		groupReplyAll:                groupReplyAll,
+		respondToAtEveryoneAndHere:   respondToAtEveryoneAndHere,
+		shareSessionInChannel:        shareSessionInChannel,
+		threadIsolation:              threadIsolation,
+		threadFollowupWithoutMention: threadFollowupWithoutMention,
+		resolveMentions:              resolveMentionsOpt,
+		noReplyToTrigger:             noReplyToTrigger,
+		client:                       lark.NewClient(appID, appSecret, clientOpts...),
+		replayClient:                 newFeishuReplayClient(appID, appSecret, domain),
+		dedup:                        &core.MessageDedup{},
+		port:                         port,
+		callbackPath:                 callbackPath,
+		encryptKey:                   encryptKey,
+		peerBots:                     peerBots,
+		imageBatch:                   make(map[string]*imageBatchEntry),
+		imageBatchWindow:             imageBatchWindow,
 	}
 	if !useInteractiveCard {
 		base.self = base
@@ -459,6 +462,47 @@ func (p *Platform) getBotOpenID() string {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return p.botOpenID
+}
+
+// SetSessionActivationStore injects the project-scoped persistent activation
+// store before the platform starts receiving messages.
+func (p *Platform) SetSessionActivationStore(store core.SessionActivationStore) {
+	p.mu.Lock()
+	p.sessionActivationStore = store
+	p.mu.Unlock()
+}
+
+func (p *Platform) getSessionActivationStore() core.SessionActivationStore {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.sessionActivationStore
+}
+
+// MigrateExistingSessionActivations restores legacy thread sessions only when
+// the old configuration guaranteed that creating a thread session required an
+// explicit @bot mention. Configurations that admitted @all or every group
+// message cannot safely infer activation from session existence and are left
+// untouched.
+func (p *Platform) MigrateExistingSessionActivations(sessionKeys []string) {
+	if !p.threadIsolation || p.groupReplyAll || p.respondToAtEveryoneAndHere {
+		return
+	}
+	store := p.getSessionActivationStore()
+	if store == nil {
+		return
+	}
+	prefix := p.tag() + ":"
+	migrated := 0
+	for _, sessionKey := range sessionKeys {
+		if !strings.HasPrefix(sessionKey, prefix) || !isThreadSessionKey(sessionKey) || store.IsSessionActivated(sessionKey) {
+			continue
+		}
+		store.MarkSessionActivated(sessionKey)
+		migrated++
+	}
+	if migrated > 0 {
+		slog.Info(p.tag()+": restored legacy thread activations", "count", migrated)
+	}
 }
 
 func (p *Platform) KeepPreviewOnFinish() bool {
@@ -1345,20 +1389,20 @@ func (p *Platform) onMessage(ctx context.Context, event *larkim.P2MessageReceive
 	// Pre-compute sessionKey so the @bot filter below can consult the active
 	// thread set; sessionKey is also used downstream for dispatch.
 	sessionKey := p.makeSessionKey(msg, chatID, userID)
+	botOpenID := p.getBotOpenID()
+	botMentioned := botOpenID != "" && isBotMentioned(msg.Mentions, botOpenID)
 
-	if chatType == "group" && !p.groupReplyAll && p.getBotOpenID() != "" {
-		if !isBotMentioned(msg.Mentions, p.getBotOpenID()) {
+	if chatType == "group" && !p.groupReplyAll && botOpenID != "" {
+		if !botMentioned {
 			switch {
 			// Feishu @all sends {"text":"@_all"} with 0 mentions.
 			case p.respondToAtEveryoneAndHere && msg.Content != nil && strings.Contains(*msg.Content, "@_all"):
 				slog.Debug(p.tag()+": responding to @all message", "chat_id", chatID)
-			// Once a thread has been engaged via @bot, allow follow-up
-			// attachment-only messages (image/file/audio) in the same thread
-			// through without re-mentioning the bot. Plain text and rich-text
-			// posts still require an explicit @bot to avoid pulling in
-			// unrelated chatter.
-			case p.threadIsolation && isAttachmentMsgType(msgType) && p.isActiveThreadSession(sessionKey):
-				slog.Debug(p.tag()+": passing attachment through active thread without mention",
+			// Once a thread has been engaged via @bot, attachment-only user
+			// messages can pass through. When thread_followup_without_mention is
+			// enabled, text and rich-text user follow-ups are admitted too.
+			case p.allowsUnmentionedThreadFollowup(msgType, stringValue(sender.SenderType), sessionKey):
+				slog.Debug(p.tag()+": passing user follow-up through active thread without mention",
 					"chat_id", chatID, "session_key", sessionKey, "msg_type", msgType, "message_id", messageID)
 			default:
 				slog.Debug(p.tag()+": ignoring group message without bot mention", "chat_id", chatID)
@@ -1402,9 +1446,12 @@ func (p *Platform) onMessage(ctx context.Context, event *larkim.P2MessageReceive
 		"reply_in_thread", p.shouldReplyInThread(rctx),
 	)
 
-	// Mark this thread as bot-engaged so subsequent attachment-only messages
-	// in the same thread can pass through without re-mentioning the bot.
-	p.markThreadSessionActive(sessionKey)
+	// Only an explicit @bot activates a thread. Messages admitted through
+	// group_reply_all or @all must not silently turn unrelated chatter into an
+	// active no-mention conversation.
+	if chatType == "group" && botMentioned {
+		p.markThreadSessionActive(sessionKey)
+	}
 
 	// Dispatch message handling asynchronously so the SDK event loop is not
 	// blocked by IO-heavy operations (image/audio download, handler HTTP calls).
@@ -3353,14 +3400,27 @@ func isAttachmentMsgType(msgType string) bool {
 	return false
 }
 
+// allowsUnmentionedThreadFollowup reports whether a user message can bypass
+// the group @bot gate. Other bots must still explicitly mention this bot even
+// when Feishu delivers bot-authored messages to the application.
+func (p *Platform) allowsUnmentionedThreadFollowup(msgType, senderType, sessionKey string) bool {
+	if !strings.EqualFold(strings.TrimSpace(senderType), "user") || !p.isActiveThreadSession(sessionKey) {
+		return false
+	}
+	return isAttachmentMsgType(msgType) || p.threadFollowupWithoutMention
+}
+
 // markThreadSessionActive records that a thread sessionKey has been engaged
-// by an @bot message, enabling attachment-only follow-ups inside the thread.
-// No-op when thread isolation is disabled or sessionKey is not a thread key.
+// by an explicit @bot message. No-op when thread isolation is disabled or
+// sessionKey is not a thread key.
 func (p *Platform) markThreadSessionActive(sessionKey string) {
 	if !p.threadIsolation || !isThreadSessionKey(sessionKey) {
 		return
 	}
 	p.activeThreadSessions.Store(sessionKey, time.Now())
+	if store := p.getSessionActivationStore(); store != nil {
+		store.MarkSessionActivated(sessionKey)
+	}
 }
 
 // isActiveThreadSession reports whether the given sessionKey corresponds to a
@@ -3369,8 +3429,15 @@ func (p *Platform) isActiveThreadSession(sessionKey string) bool {
 	if !p.threadIsolation || !isThreadSessionKey(sessionKey) {
 		return false
 	}
-	_, ok := p.activeThreadSessions.Load(sessionKey)
-	return ok
+	if _, ok := p.activeThreadSessions.Load(sessionKey); ok {
+		return true
+	}
+	store := p.getSessionActivationStore()
+	if store == nil || !store.IsSessionActivated(sessionKey) {
+		return false
+	}
+	p.activeThreadSessions.Store(sessionKey, time.Now())
+	return true
 }
 
 // stripMentions processes @mention placeholders (e.g. @_user_1) in text.

@@ -2206,7 +2206,24 @@ func (e *Engine) Start() error {
 	var startErrs []error
 	readyCount := 0
 	pendingCount := 0
+	idToSessionKey, _ := e.sessions.SessionKeyMap()
+	seenSessionKeys := make(map[string]struct{}, len(idToSessionKey))
+	existingSessionKeys := make([]string, 0, len(idToSessionKey))
+	for _, sessionKey := range idToSessionKey {
+		if _, exists := seenSessionKeys[sessionKey]; exists {
+			continue
+		}
+		seenSessionKeys[sessionKey] = struct{}{}
+		existingSessionKeys = append(existingSessionKeys, sessionKey)
+	}
+	sort.Strings(existingSessionKeys)
 	for _, p := range e.platforms {
+		if aware, ok := p.(SessionActivationStoreAware); ok {
+			aware.SetSessionActivationStore(e.sessions)
+		}
+		if migrator, ok := p.(ExistingSessionActivationMigrator); ok {
+			migrator.MigrateExistingSessionActivations(existingSessionKeys)
+		}
 		_, isAsync := p.(AsyncRecoverablePlatform)
 		if async, ok := p.(AsyncRecoverablePlatform); ok {
 			async.SetLifecycleHandler(e)
@@ -3826,9 +3843,12 @@ func (e *Engine) getOrCreateWorkspaceAgent(workspace string) (Agent, *SessionMan
 	}
 
 	// Create per-workspace session manager
-	h := sha256.Sum256([]byte(workspace))
-	sessionFile := filepath.Join(filepath.Dir(e.sessions.StorePath()),
-		fmt.Sprintf("%s_ws_%s.json", e.name, hex.EncodeToString(h[:4])))
+	sessionFile := ""
+	if baseStorePath := e.sessions.StorePath(); baseStorePath != "" {
+		h := sha256.Sum256([]byte(workspace))
+		sessionFile = filepath.Join(filepath.Dir(baseStorePath),
+			fmt.Sprintf("%s_ws_%s.json", e.name, hex.EncodeToString(h[:4])))
+	}
 	sessions := NewSessionManager(sessionFile)
 
 	ws.agent = agent

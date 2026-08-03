@@ -5,8 +5,10 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1061,16 +1063,60 @@ func TestMarkAndIsActiveThreadSession(t *testing.T) {
 	})
 }
 
-// TestOnMessageThreadIsolationAdmitsAttachmentWithoutMention covers the fix
-// for the case where a user @mentions the bot in a thread, then drops follow-up
-// images into the same thread without re-mentioning. Pre-fix, those images
-// were silently dropped by the group @bot filter; post-fix they should pass
-// through and be dispatched.
-func TestOnMessageThreadIsolationAdmitsAttachmentWithoutMention(t *testing.T) {
+func TestMigrateExistingSessionActivationsOnlyWithSafeMentionGate(t *testing.T) {
+	const threadKey = "feishu:oc_chat:root:om_root"
+	legacyKeys := []string{
+		threadKey,
+		"feishu:oc_chat:ou_user",
+		"discord:channel:root:thread",
+	}
+
+	tests := []struct {
+		name                   string
+		groupReplyAll          bool
+		respondToAtEveryone    bool
+		wantThreadKeyActivated bool
+	}{
+		{name: "mention-only configuration migrates existing thread", wantThreadKeyActivated: true},
+		{name: "group reply all skips migration", groupReplyAll: true},
+		{name: "at all response skips migration", respondToAtEveryone: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := core.NewSessionManager(filepath.Join(t.TempDir(), "sessions.json"))
+			p := &Platform{
+				platformName:               "feishu",
+				threadIsolation:            true,
+				groupReplyAll:              tt.groupReplyAll,
+				respondToAtEveryoneAndHere: tt.respondToAtEveryone,
+			}
+			p.SetSessionActivationStore(store)
+			p.MigrateExistingSessionActivations(legacyKeys)
+
+			if got := store.IsSessionActivated(threadKey); got != tt.wantThreadKeyActivated {
+				t.Fatalf("thread activation = %v, want %v", got, tt.wantThreadKeyActivated)
+			}
+			if store.IsSessionActivated("feishu:oc_chat:ou_user") {
+				t.Fatal("non-thread session must not be migrated")
+			}
+			if store.IsSessionActivated("discord:channel:root:thread") {
+				t.Fatal("another platform's thread must not be migrated")
+			}
+		})
+	}
+}
+
+// TestOnMessageThreadFollowupWithoutMentionRequiresActiveUserThread covers the
+// complete no-mention gate: an explicit @bot activates one thread, the opt-in
+// setting admits later user text there, unrelated threads remain ignored, and
+// bot-authored messages cannot bypass the mention requirement.
+func TestOnMessageThreadFollowupWithoutMentionRequiresActiveUserThread(t *testing.T) {
 	const appID = "cli_thread_admit"
 	const appSecret = "secret-thread-admit"
 	const botOpenID = "ou_bot"
 	const userOpenID = "ou_user"
+	const otherUserOpenID = "ou_other_user"
 	const chatID = "oc_chat"
 	const rootMsgID = "om_root"
 	const imageKey = "img_in_thread"
@@ -1102,6 +1148,8 @@ func TestOnMessageThreadIsolationAdmitsAttachmentWithoutMention(t *testing.T) {
 	defer srv.Close()
 
 	received := make(chan *core.Message, 8)
+	activationPath := filepath.Join(t.TempDir(), "sessions.json")
+	activationStore := core.NewSessionManager(activationPath)
 	p := &Platform{
 		platformName:    "feishu",
 		domain:          srv.URL,
@@ -1118,9 +1166,11 @@ func TestOnMessageThreadIsolationAdmitsAttachmentWithoutMention(t *testing.T) {
 			received <- msg
 		},
 	}
+	p.SetSessionActivationStore(activationStore)
 
 	chatType := "group"
 	senderType := "user"
+	senderOpenID := userOpenID
 	now := time.Now().UnixMilli()
 	createTime := func() *string {
 		s := strconv.FormatInt(now, 10)
@@ -1132,7 +1182,7 @@ func TestOnMessageThreadIsolationAdmitsAttachmentWithoutMention(t *testing.T) {
 		ev := &larkim.P2MessageReceiveV1{
 			Event: &larkim.P2MessageReceiveV1Data{
 				Sender: &larkim.EventSender{
-					SenderId:   &larkim.UserId{OpenId: stringPtr(userOpenID)},
+					SenderId:   &larkim.UserId{OpenId: stringPtr(senderOpenID)},
 					SenderType: &senderType,
 				},
 				Message: &larkim.EventMessage{
@@ -1168,11 +1218,19 @@ func TestOnMessageThreadIsolationAdmitsAttachmentWithoutMention(t *testing.T) {
 	if !p.isActiveThreadSession(threadKey) {
 		t.Fatalf("thread %q should be marked active after @bot text", threadKey)
 	}
+	if !activationStore.IsSessionActivated(threadKey) {
+		t.Fatalf("thread %q activation was not persisted", threadKey)
+	}
 	select {
 	case <-received:
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for the opening @bot text to dispatch")
 	}
+
+	// Simulate a process restart: in-memory activation is empty and the
+	// platform receives a newly loaded store backed by the same session file.
+	p.activeThreadSessions = sync.Map{}
+	p.SetSessionActivationStore(core.NewSessionManager(activationPath))
 
 	// Step 2: follow-up image in the same thread, no @mention — should pass through.
 	imgContent := `{"image_key":"` + imageKey + `"}`
@@ -1203,8 +1261,7 @@ func TestOnMessageThreadIsolationAdmitsAttachmentWithoutMention(t *testing.T) {
 	}
 
 	// Step 4: text without @mention in the active thread — should be dropped
-	// (only attachments are admitted; otherwise unrelated thread chatter would
-	// flood the agent).
+	// while thread_followup_without_mention keeps its default false value.
 	if err := p.onMessage(context.Background(), buildEvent("om_thread_text", "text", `{"text":"刚才那张图能看到吗"}`, nil, rootMsgID)); err != nil {
 		t.Fatalf("onMessage(text in thread without mention) error = %v", err)
 	}
@@ -1213,6 +1270,77 @@ func TestOnMessageThreadIsolationAdmitsAttachmentWithoutMention(t *testing.T) {
 		t.Fatalf("text in active thread without @mention should be dropped, got %q", msg.MessageID)
 	case <-time.After(300 * time.Millisecond):
 		// expected
+	}
+
+	// Step 5: enabling the opt-in admits a different user's text in the active
+	// thread while retaining the same root-based agent session.
+	p.threadFollowupWithoutMention = true
+	p.activeThreadSessions = sync.Map{}
+	p.SetSessionActivationStore(core.NewSessionManager(activationPath))
+	senderOpenID = otherUserOpenID
+	if err := p.onMessage(context.Background(), buildEvent("om_thread_text_enabled", "text", `{"text":"继续分析刚才的问题"}`, nil, rootMsgID)); err != nil {
+		t.Fatalf("onMessage(enabled text follow-up) error = %v", err)
+	}
+	select {
+	case msg := <-received:
+		if msg.MessageID != "om_thread_text_enabled" {
+			t.Fatalf("expected active-thread text follow-up, got %q", msg.MessageID)
+		}
+		if msg.Content != "继续分析刚才的问题" {
+			t.Fatalf("active-thread text content = %q, want %q", msg.Content, "继续分析刚才的问题")
+		}
+		if msg.UserID != otherUserOpenID {
+			t.Fatalf("active-thread follow-up user = %q, want %q", msg.UserID, otherUserOpenID)
+		}
+		if msg.SessionKey != threadKey {
+			t.Fatalf("active-thread follow-up session = %q, want %q", msg.SessionKey, threadKey)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected user text in active thread to dispatch without @mention")
+	}
+
+	// Step 6: the same user text in an unrelated thread is still ignored.
+	if err := p.onMessage(context.Background(), buildEvent("om_other_text", "text", `{"text":"这不是给机器人的"}`, nil, "om_other_text_root")); err != nil {
+		t.Fatalf("onMessage(text in unrelated thread) error = %v", err)
+	}
+	select {
+	case msg := <-received:
+		t.Fatalf("text in unrelated thread should be dropped, got %q", msg.MessageID)
+	case <-time.After(300 * time.Millisecond):
+		// expected
+	}
+
+	// Step 7: messages authored by another bot cannot use the no-mention bypass.
+	senderType = "app"
+	if err := p.onMessage(context.Background(), buildEvent("om_bot_text", "text", `{"text":"automated bot output"}`, nil, rootMsgID)); err != nil {
+		t.Fatalf("onMessage(bot text in active thread) error = %v", err)
+	}
+	select {
+	case msg := <-received:
+		t.Fatalf("bot text without @mention should be dropped, got %q", msg.MessageID)
+	case <-time.After(300 * time.Millisecond):
+		// expected
+	}
+
+	// Step 8: @all may be handled when configured, but it does not activate the
+	// thread for later no-mention follow-ups because activation requires @bot.
+	senderType = "user"
+	p.respondToAtEveryoneAndHere = true
+	const atAllRootID = "om_at_all_root"
+	if err := p.onMessage(context.Background(), buildEvent(atAllRootID, "text", `{"text":"@_all 大家看下"}`, nil, "")); err != nil {
+		t.Fatalf("onMessage(@all root) error = %v", err)
+	}
+	select {
+	case msg := <-received:
+		if msg.MessageID != atAllRootID {
+			t.Fatalf("expected @all message %q, got %q", atAllRootID, msg.MessageID)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected configured @all message to dispatch")
+	}
+	atAllThreadKey := "feishu:" + chatID + ":root:" + atAllRootID
+	if p.isActiveThreadSession(atAllThreadKey) {
+		t.Fatalf("@all message must not activate thread %q", atAllThreadKey)
 	}
 }
 
@@ -1263,6 +1391,47 @@ func TestNewPlatform_RequireMentionTrueDoesNotForceGroupReplyAll(t *testing.T) {
 	}
 	if fp.groupReplyAll {
 		t.Error("require_mention=true should leave groupReplyAll=false, but it is true")
+	}
+}
+
+func TestNewPlatform_ThreadFollowupWithoutMentionIsOptIn(t *testing.T) {
+	tests := []struct {
+		name    string
+		opts    map[string]any
+		enabled bool
+	}{
+		{
+			name: "default disabled",
+			opts: map[string]any{},
+		},
+		{
+			name:    "explicitly enabled",
+			opts:    map[string]any{"thread_followup_without_mention": true},
+			enabled: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := map[string]any{
+				"app_id":     "cli_test",
+				"app_secret": "secret",
+			}
+			for key, value := range tt.opts {
+				opts[key] = value
+			}
+			platform, err := newPlatform("feishu", lark.FeishuBaseUrl, opts)
+			if err != nil {
+				t.Fatalf("newPlatform error: %v", err)
+			}
+			fp := extractBasePlatform(platform)
+			if fp == nil {
+				t.Fatal("expected *Platform or *interactivePlatform")
+			}
+			if fp.threadFollowupWithoutMention != tt.enabled {
+				t.Fatalf("threadFollowupWithoutMention = %v, want %v", fp.threadFollowupWithoutMention, tt.enabled)
+			}
+		})
 	}
 }
 

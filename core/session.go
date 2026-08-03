@@ -18,11 +18,11 @@ const ContinueSession = "__continue__"
 
 // Session tracks one conversation between a user and the agent.
 type Session struct {
-	ID                  string         `json:"id"`
-	Name                string         `json:"name"`
-	AgentSessionID      string         `json:"agent_session_id"`
-	AgentType           string         `json:"agent_type,omitempty"`
-	PastAgentSessionIDs []string       `json:"past_agent_session_ids,omitempty"`
+	ID                  string   `json:"id"`
+	Name                string   `json:"name"`
+	AgentSessionID      string   `json:"agent_session_id"`
+	AgentType           string   `json:"agent_type,omitempty"`
+	PastAgentSessionIDs []string `json:"past_agent_session_ids,omitempty"`
 	// ActiveProvider is the agent provider name that was active when this
 	// session last took a turn. It is restored before --resume so that a
 	// cc-connect process restart does not silently drop a user's
@@ -270,11 +270,12 @@ type sessionSnapshot struct {
 	ActiveSession  map[string]string    `json:"active_session"`
 	UserSessions   map[string][]string  `json:"user_sessions"`
 	Counter        int64                `json:"counter"`
-	SessionNames   map[string]string    `json:"session_names,omitempty"`    // agent session ID → custom name
-	UserMeta       map[string]*UserMeta `json:"user_meta,omitempty"`        // sessionKey → display info
-	PastIDTracking bool                 `json:"past_id_tracking,omitempty"` // true once PastAgentSessionIDs is supported
-	LegacyData     bool                 `json:"legacy_data,omitempty"`      // true while pre-fix sessions exist
-	Version        int                  `json:"version,omitempty"`          // schema version for migration detection
+	SessionNames   map[string]string    `json:"session_names,omitempty"`       // agent session ID → custom name
+	UserMeta       map[string]*UserMeta `json:"user_meta,omitempty"`           // sessionKey → display info
+	Activations    map[string]bool      `json:"session_activations,omitempty"` // sessionKey → explicitly activated by platform
+	PastIDTracking bool                 `json:"past_id_tracking,omitempty"`    // true once PastAgentSessionIDs is supported
+	LegacyData     bool                 `json:"legacy_data,omitempty"`         // true while pre-fix sessions exist
+	Version        int                  `json:"version,omitempty"`             // schema version for migration detection
 }
 
 // SessionManager supports multiple named sessions per user with active-session tracking.
@@ -286,6 +287,7 @@ type SessionManager struct {
 	userSessions  map[string][]string
 	sessionNames  map[string]string    // agent session ID → custom name
 	userMeta      map[string]*UserMeta // sessionKey → display info
+	activations   map[string]bool      // sessionKey → explicitly activated by platform
 	counter       int64
 	storePath     string // empty = no persistence
 
@@ -303,6 +305,7 @@ func NewSessionManager(storePath string) *SessionManager {
 		userSessions:  make(map[string][]string),
 		sessionNames:  make(map[string]string),
 		userMeta:      make(map[string]*UserMeta),
+		activations:   make(map[string]bool),
 		storePath:     storePath,
 	}
 	if storePath != "" {
@@ -494,6 +497,29 @@ func (sm *SessionManager) GetUserMeta(sessionKey string) *UserMeta {
 	return &cp
 }
 
+// IsSessionActivated reports whether a platform explicitly activated the
+// session key and persisted that decision.
+func (sm *SessionManager) IsSessionActivated(sessionKey string) bool {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	return sm.activations[sessionKey]
+}
+
+// MarkSessionActivated persists an explicit platform activation for a session
+// key. Repeated marks are idempotent and do not rewrite the session snapshot.
+func (sm *SessionManager) MarkSessionActivated(sessionKey string) {
+	if strings.TrimSpace(sessionKey) == "" {
+		return
+	}
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	if sm.activations[sessionKey] {
+		return
+	}
+	sm.activations[sessionKey] = true
+	sm.saveLocked()
+}
+
 // AllSessions returns all sessions across all user keys.
 func (sm *SessionManager) AllSessions() []*Session {
 	sm.mu.RLock()
@@ -671,6 +697,7 @@ func (sm *SessionManager) saveLocked() {
 		Counter:        sm.counter,
 		SessionNames:   sm.sessionNames,
 		UserMeta:       sm.userMeta,
+		Activations:    sm.activations,
 		PastIDTracking: true,
 		LegacyData:     sm.legacyData,
 		Version:        snapshotVersion,
@@ -707,6 +734,7 @@ func (sm *SessionManager) load() {
 	sm.userSessions = snap.UserSessions
 	sm.sessionNames = snap.SessionNames
 	sm.userMeta = snap.UserMeta
+	sm.activations = snap.Activations
 	sm.counter = snap.Counter
 	if snap.Version >= snapshotVersion {
 		sm.legacyData = snap.LegacyData
@@ -741,6 +769,9 @@ func (sm *SessionManager) load() {
 	}
 	if sm.userMeta == nil {
 		sm.userMeta = make(map[string]*UserMeta)
+	}
+	if sm.activations == nil {
+		sm.activations = make(map[string]bool)
 	}
 
 	for _, s := range sm.sessions {
@@ -828,7 +859,7 @@ func (sm *SessionManager) PruneDuplicateSessions(mergeHistory bool) PruneResult 
 	defer sm.mu.Unlock()
 
 	// Group sessions by baseChat
-	chatSessions := make(map[string][]*Session) // baseChat -> sessions
+	chatSessions := make(map[string][]*Session)  // baseChat -> sessions
 	sessionToBaseChat := make(map[string]string) // session.ID -> baseChat
 
 	for userKey, sessionIDs := range sm.userSessions {

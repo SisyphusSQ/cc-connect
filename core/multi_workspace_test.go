@@ -345,6 +345,24 @@ func TestSessionContextForKey_SharedBinding(t *testing.T) {
 	}
 }
 
+func TestGetOrCreateWorkspaceAgentWithoutBaseStoreDoesNotPersist(t *testing.T) {
+	const agentName = "workspace-no-store-test-agent"
+	RegisterAgent(agentName, func(opts map[string]any) (Agent, error) {
+		return &namedTestAgent{name: agentName}, nil
+	})
+
+	workspace := normalizeWorkspacePath(t.TempDir())
+	e := NewEngine("test", &namedTestAgent{name: agentName}, nil, "", LangEnglish)
+
+	_, sessions, err := e.getOrCreateWorkspaceAgent(workspace)
+	if err != nil {
+		t.Fatalf("getOrCreateWorkspaceAgent: %v", err)
+	}
+	if got := sessions.StorePath(); got != "" {
+		t.Fatalf("workspace session store path = %q, want empty when base persistence is disabled", got)
+	}
+}
+
 func TestExtractRepoName(t *testing.T) {
 	tests := []struct {
 		input string

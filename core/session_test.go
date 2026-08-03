@@ -157,6 +157,29 @@ func TestSessionManager_Persistence(t *testing.T) {
 	}
 }
 
+func TestSessionManager_SessionActivationPersists(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sessions.json")
+	const sessionKey = "feishu:oc_chat:root:om_root"
+
+	sm1 := NewSessionManager(path)
+	if sm1.IsSessionActivated(sessionKey) {
+		t.Fatal("new session key must not start activated")
+	}
+	sm1.MarkSessionActivated(sessionKey)
+	if !sm1.IsSessionActivated(sessionKey) {
+		t.Fatal("marked session key must be activated before reload")
+	}
+
+	sm2 := NewSessionManager(path)
+	if !sm2.IsSessionActivated(sessionKey) {
+		t.Fatal("marked session key must remain activated after reload")
+	}
+	if sm2.IsSessionActivated("feishu:oc_chat:root:om_unrelated") {
+		t.Fatal("unrelated session key must remain inactive")
+	}
+}
+
 func TestSessionManager_GetOrCreateActive_Persists(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "sessions.json")
@@ -1117,4 +1140,3 @@ func TestKnownAgentSessionIDs_ResetAllSessionsBug(t *testing.T) {
 		t.Fatalf("filterOwnedSessions returned %d, want 3", len(filtered))
 	}
 }
-

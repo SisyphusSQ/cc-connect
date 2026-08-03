@@ -15,6 +15,26 @@ type Platform interface {
 	Stop() error
 }
 
+// SessionActivationStore persists platform decisions that a session key may
+// accept follow-up messages without repeating its initial activation gesture.
+type SessionActivationStore interface {
+	IsSessionActivated(sessionKey string) bool
+	MarkSessionActivated(sessionKey string)
+}
+
+// SessionActivationStoreAware is implemented by platforms that need their
+// activation decisions to survive process restarts.
+type SessionActivationStoreAware interface {
+	SetSessionActivationStore(store SessionActivationStore)
+}
+
+// ExistingSessionActivationMigrator lets a platform safely translate legacy
+// persisted sessions into explicit activation records after the activation
+// store is first introduced.
+type ExistingSessionActivationMigrator interface {
+	MigrateExistingSessionActivations(sessionKeys []string)
+}
+
 // ErrNotSupported indicates a platform doesn't support a particular operation.
 var ErrNotSupported = errors.New("operation not supported by this platform")
 
