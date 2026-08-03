@@ -1142,7 +1142,10 @@ func TestCUJ_A3_ImageReachesAgent(t *testing.T) {
 		agent.mu.Lock()
 		n := len(agent.sessions)
 		agent.mu.Unlock()
-		if n > 0 {
+		// StartSession records the agent session before the asynchronous turn
+		// has persisted its result. Wait for the final user-visible reply too;
+		// it is sent only after SessionManager.Save completes.
+		if n > 0 && len(plat.getSent()) > 0 {
 			break
 		}
 		select {
@@ -1206,7 +1209,10 @@ func TestCUJ_A5_FileReachesAgent(t *testing.T) {
 		agent.mu.Lock()
 		n := len(agent.sessions)
 		agent.mu.Unlock()
-		if n > 0 {
+		// StartSession records the agent session before the asynchronous turn
+		// has persisted its result. Wait for the final user-visible reply too;
+		// it is sent only after SessionManager.Save completes.
+		if n > 0 && len(plat.getSent()) > 0 {
 			return
 		}
 		select {
@@ -2049,7 +2055,6 @@ func TestCUJ_H2_TwoPlatformsConcurrentNoBleed(t *testing.T) {
 		t.Fatal("platB received no replies")
 	}
 }
-
 // ---------------------------------------------------------------------------
 // Streaming-aware platform + agent extension for CUJ tests that need to
 // exercise the streamPreview (sp) code path.

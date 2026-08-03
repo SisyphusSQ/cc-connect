@@ -58,6 +58,20 @@ type stubPlatformEngine struct {
 	mu   sync.Mutex
 }
 
+type stubSessionActivationPlatform struct {
+	stubPlatformEngine
+	store               SessionActivationStore
+	migratedSessionKeys []string
+}
+
+func (p *stubSessionActivationPlatform) SetSessionActivationStore(store SessionActivationStore) {
+	p.store = store
+}
+
+func (p *stubSessionActivationPlatform) MigrateExistingSessionActivations(sessionKeys []string) {
+	p.migratedSessionKeys = append([]string(nil), sessionKeys...)
+}
+
 func (p *stubPlatformEngine) Name() string               { return p.n }
 func (p *stubPlatformEngine) Start(MessageHandler) error { return nil }
 func (p *stubPlatformEngine) Reply(_ context.Context, _ any, content string) error {
@@ -877,6 +891,30 @@ func TestEngineStart_DefersAsyncPlatformReadyInitialization(t *testing.T) {
 	}
 	if p.cardNavSetCalls != 0 {
 		t.Fatalf("cardNavSetCalls = %d, want 0 before ready", p.cardNavSetCalls)
+	}
+}
+
+func TestEngineStart_InjectsPersistedSessionActivationStore(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sessions.json")
+	const sessionKey = "feishu:oc_chat:root:om_root"
+
+	persisted := NewSessionManager(path)
+	persisted.NewSession(sessionKey, "existing-thread")
+	persisted.MarkSessionActivated(sessionKey)
+
+	p := &stubSessionActivationPlatform{stubPlatformEngine: stubPlatformEngine{n: "feishu"}}
+	e := NewEngine("test", &stubAgent{}, []Platform{p}, path, LangEnglish)
+	if err := e.Start(); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if p.store == nil {
+		t.Fatal("session activation store was not injected before platform start")
+	}
+	if !p.store.IsSessionActivated(sessionKey) {
+		t.Fatalf("injected store did not restore activation for %q", sessionKey)
+	}
+	if len(p.migratedSessionKeys) != 1 || p.migratedSessionKeys[0] != sessionKey {
+		t.Fatalf("migrated session keys = %#v, want [%q]", p.migratedSessionKeys, sessionKey)
 	}
 }
 

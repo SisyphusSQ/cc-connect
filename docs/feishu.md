@@ -114,6 +114,7 @@ app_secret = "QhkMpxxxxxxxxxxxxxxxxxxxx"
 # domain = "https://open.feishu.cn" # 可选：覆盖运行时 API/WebSocket 域名
 # enable_feishu_card = true  # 可选：关闭后统一回退纯文本回复
 # thread_isolation = true    # 可选：按飞书 thread/root 隔离群聊会话
+# thread_followup_without_mention = false # 可选：已由 @机器人 激活的话题内允许用户免 @ 续聊
 # progress_style = "legacy"  # 可选：legacy | compact | card
 # done_emoji = "none"          # 可选：agent 完成回复后添加的表情回复（如 "Done"）；设为 "none" 可禁用
 # image_batch_window_ms = 500  # 可选：连续多图合批窗口（默认 500ms，详见下文）
@@ -122,6 +123,7 @@ app_secret = "QhkMpxxxxxxxxxxxxxxxxxxxx"
 > 如果应用没有交互卡片权限，或后台未配置卡片回调，可将 `enable_feishu_card = false`，让所有命令统一走纯文本回复，避免卡片发送失败后用户看不到内容。
 > 如果开启 `thread_isolation = true`，群聊里每个根消息 / reply thread 会对应一个独立 agent session；私聊行为保持原样。
 > 在 multi-workspace 模式下，`thread_isolation = true` 也会让每个话题独立绑定 workspace；在话题内执行 `/workspace bind <name>` 不会影响同群的其他话题。已有的群级 binding 会保留为默认值，由尚未显式绑定的话题继承，因此回退到旧版本时仍可使用。
+> 进一步开启 `thread_followup_without_mention = true` 后，只有经过明确 `@机器人` 激活的话题才允许用户免 `@` 续聊；未激活话题、其他机器人发送的未 `@` 消息仍会被忽略。激活状态随项目 session 一起持久化，服务重启后会自动恢复。
 > `progress_style = "compact"` 会把思考/工具进度合并到一条可更新消息里，减少刷屏；`legacy` 保持原有逐条发送；`card` 会使用结构化卡片（标题 + 进度块）持续更新同一条消息，观感比纯文本更清晰。
 > `domain` 只影响运行时 API / WebSocket 请求地址；CLI `setup/new/bind` 的引导域名仍然使用内置默认值。
 > `done_emoji` 设置后，agent 每次完成回复时会在用户消息上添加指定表情（如 `"Done"` → ✅）。先移除 "OnIt" 表情（如果有），再添加 done 表情。在 quiet 模式下特别有用，因为飞书卡片原地更新不触发推送，done 表情可以通知用户 agent 已完成。设为 `"none"` 或不配置则禁用。
@@ -134,9 +136,11 @@ group_allow_from = "*"
 private_allow_from = "ou_admin_open_id"
 allow_chat = "*"
 group_reply_all = false
+thread_isolation = true
+thread_followup_without_mention = true
 ```
 
-`group_reply_all = false` 表示群聊仍需明确 @机器人。普通消息和交互卡片回调会按会话类型应用白名单；Bot 菜单没有群聊上下文，因此按私聊白名单处理。启用分场景白名单后，进程重启前生成的旧卡片会在新进程重新观察到该会话消息前安全拒绝回调。
+`group_reply_all = false` 保证机器人不会监听并响应整个群；只有首次明确 `@机器人` 的话题会进入活跃集合，之后该话题内的用户消息免 `@` 续聊。普通消息和交互卡片回调会按会话类型应用白名单；Bot 菜单没有群聊上下文，因此按私聊白名单处理。启用分场景白名单后，进程重启前生成的旧卡片会在新进程重新观察到该会话消息前安全拒绝回调。
 
 ---
 

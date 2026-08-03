@@ -149,12 +149,22 @@ All user-facing strings must go through `core/i18n.go`:
 ### Requirements
 
 - All new features must include unit tests.
+- Do not run live E2E tests against real IM platforms, provider accounts,
+  credentials, installed agent CLIs, or externally reachable callbacks unless
+  the user gives separate, explicit authorization for that run.
+- Do not use `go test ./...`, `make test-fast`, `make test-full`,
+  `make test-smoke`, `make test-e2e`, or `make test-release` as routine local
+  validation in this fork. The current untagged full suite includes tests that
+  start installed agent CLIs and may attempt authentication or model discovery.
+  Run deterministic tests for the affected packages plus local build/vet checks
+  instead.
 - **All bug fixes MUST include a regression test in the same PR.** A bug
   fix PR without a test that fails on the pre-fix code and passes on the
   fixed code will not be merged. Name regression tests so the bug is
   searchable later, e.g. `TestSwitchToAgentSession_PreservesHistory` for
   the cmdSwitch history-loss bug.
-- Tests must pass before committing: `go test ./...`.
+- Affected deterministic tests must pass before committing; full or live test
+  entrypoints still require the explicit authorization described above.
 - Changes that touch a Critical User Journey (CUJ) — see
   `core/cuj_test.go` — should explicitly run `go test ./core/ -run TestCUJ`
   before opening the PR.
@@ -162,7 +172,8 @@ All user-facing strings must go through `core/i18n.go`:
 ### Running Tests
 
 ```bash
-# Full test suite
+# Full suite; requires separate explicit authorization in this fork because
+# some untagged agent tests start installed external CLIs
 go test ./...
 
 # Specific package
