@@ -26,13 +26,17 @@ jobs:
         with:
           node-version: '20'
           cache: 'pnpm'
-          cache-dependency-path: web/pnpm-lock.yaml
+          cache-dependency-path: |
+            web/pnpm-lock.yaml
+            web_factor/pnpm-lock.yaml
 
       - name: Build web assets
-        working-directory: web
         run: |
-          pnpm install --frozen-lockfile
-          pnpm build
+          pnpm --dir web install --frozen-lockfile
+          pnpm --dir web build
+          pnpm --dir web_factor install --frozen-lockfile
+          pnpm --dir web_factor test
+          pnpm --dir web_factor build
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -88,13 +92,17 @@ jobs:
         with:
           node-version: '20'
           cache: 'pnpm'
-          cache-dependency-path: web/pnpm-lock.yaml
+          cache-dependency-path: |
+            web/pnpm-lock.yaml
+            web_factor/pnpm-lock.yaml
 
       - name: Build web assets
-        working-directory: web
         run: |
-          pnpm install --frozen-lockfile
-          pnpm build
+          pnpm --dir web install --frozen-lockfile
+          pnpm --dir web build
+          pnpm --dir web_factor install --frozen-lockfile
+          pnpm --dir web_factor test
+          pnpm --dir web_factor build
 
       - name: Set up Go
         uses: actions/setup-go@v5

@@ -153,7 +153,72 @@
 - 不把本地静态检查、stub 或 isolated smoke 宣称为真实平台 E2E；
 - 真实 IM 平台、provider 账号、安装的 Agent CLI 或外部回调验证，必须另行获得明确授权。
 
-## 8. 每次同步记录模板
+## 8. Web 双轨维护规范
+
+### 8.1 目录职责与正式入口
+
+- `web/` 是上游 Web 的原样镜像，用于接收和审查上游前端变化；除同步上游外，不在该目录实现本项目独有视觉和交互。
+- `web_factor/` 是本项目正式交付的管理前端，保持与 `web/` 相同的信息架构、路由和功能契约，视觉层统一使用 Ant Design 和本项目主题。
+- 带 Web 的正式 Go 二进制只导入 `web_factor`。`make web`、`make build` 和 release 构建默认生成并嵌入 `web_factor/dist`。
+- `make web-upstream` 只构建上游镜像；`make web-all` 同时构建两套前端，供同步审查和仓库级 Go 检查使用。
+- `web_factor/upstream-sync.json` 记录已完成移植的上游版本、commit 和 `web/` tree hash。只有同步、移植和验证全部完成后才能更新该文件。
+
+### 8.2 允许共享的边界
+
+为避免复制协议代码后产生静默漂移，`web_factor` 可以直接复用 `web/src` 中的契约层：
+
+- `api/`：管理 API 的请求、响应类型和鉴权行为；
+- `hooks/`：与后端协议直接相关的 hook，例如 Bridge WebSocket；
+- `store/`：鉴权、主题等跨页面状态；
+- `i18n/`、`lib/`：翻译资源、平台元数据和无视觉含义的工具。
+
+`web_factor` 不直接导入 `web/src/pages`、`web/src/components`、上游 CSS/Tailwind 配置或上游视觉资源。页面、应用壳、表单、反馈、导航和响应式布局必须在 `web_factor` 内使用 Ant Design 实现。共享契约发生不兼容变化时，应让 `web_factor` 的类型检查明确失败并在同一次同步中修复。
+
+### 8.3 上游 Web 更新时的强制流程
+
+1. 读取 `web_factor/upstream-sync.json`，确认上一次已同步的 upstream commit 和 `web/` tree hash。
+2. 按本文稳定版本规则选定目标 tag，先把目标版本的 `web/` 原样同步到本仓库；不要用 `web_factor` 覆盖 `web/`。
+3. 比较上一次基线与目标版本的 `web/` 差异，并按下表分类。
+4. 先同步共享契约层，再在 `web_factor` 中逐项移植页面和交互变化；不能只保证编译通过就宣称完成。
+5. 完成路由、API、WebSocket、i18n、平台元数据和用户行为核对，执行第 8.5 节验证。
+6. 最后计算目标 `web/` tree hash并更新 `web_factor/upstream-sync.json`。存在未移植的强制项时，保持旧基线并记录未决事项。
+
+推荐的只读差异入口：
+
+```bash
+git diff <上次上游commit> <目标上游commit> -- web/
+git rev-parse <目标上游commit>:web
+git diff -- web/
+```
+
+### 8.4 Web 差异分类与移植要求
+
+| 上游变化 | `web/` | `web_factor/` |
+| --- | --- | --- |
+| API 路径、请求/响应类型、鉴权 | 原样同步 | 必须同步并验证调用行为 |
+| Bridge WebSocket 事件、能力声明 | 原样同步 | 必须同步消息处理、卡片动作和流式行为 |
+| 新增、删除或重命名路由 | 原样同步 | 必须保持路由和可达功能一致 |
+| 表单字段、默认值、校验、错误反馈 | 原样同步 | 必须移植语义，控件使用 Ant Design |
+| i18n key、平台元数据、状态字段 | 原样同步 | 必须同步，不能以硬编码文案替代 |
+| 纯视觉、Tailwind 或图标调整 | 原样同步 | 评估意图后按本项目主题实现，不逐像素复制 |
+| 上游缺陷修复 | 原样同步 | 判断是否影响共享契约或用户行为；影响则必须移植并补回归测试 |
+
+如果无法判断某项变化是强制功能还是纯视觉，应按功能变化处理，直到人工审查证明它不影响行为。
+
+### 8.5 验证与完成条件
+
+每次 Web 同步至少完成：
+
+- `pnpm --dir web_factor test`；
+- `pnpm --dir web_factor build`，同时完成 TypeScript 契约检查；
+- `antd lint web_factor/src --version 6.5.3 --format json`；升级 Ant Design 时以 `web_factor/package.json` 的精确版本替换命令版本；
+- `make web-all`，证明上游镜像和正式前端都可构建；
+- 受影响 Go 包的确定性测试和 `go build ./cmd/cc-connect`；
+- 人工核对登录、主题/语言、响应式导航、项目配置、Provider、Skill、Chat、Cron 和 System 页面；Chat 需覆盖普通消息、流式消息、slash command、会话切换和卡片动作。
+
+机器构建、静态检查和 mock 测试不能称为真实 Bridge、Agent CLI 或 IM 平台 E2E；这些真实外部验证仍需单独授权。同步记录必须区分已完成的机器验证和仍待人工/真实环境验证的部分。
+
+## 9. 每次同步记录模板
 
 ```text
 同步日期：YYYY-MM-DD
@@ -161,6 +226,8 @@
 上游稳定版本：vX.Y.Z
 上游 commit：<sha>
 本地同步基线：<sha>
+web tree：<tree sha>
+web_factor 同步基线：<web_factor/upstream-sync.json 中的上次基线>
 
 采用上游实现：
 -
@@ -187,10 +254,11 @@
 -
 ```
 
-## 9. 同步完成后的收口
+## 10. 同步完成后的收口
 
 - 保留上游稳定 tag 原样，不移动或复用上游 tag；
 - 在 fork 自己的记录中注明上游基线和本地差异；
 - 对适合回馈上游的本地功能单独整理，避免下次继续产生重复实现；
 - 发布前重新核对最终 commit、配置示例、文档、构建产物和远端状态；
 - 未完成的迁移、验证或人工验收不得标记为同步完成。
+- 如果上游包含 `web/` 变化，必须同时写明 `web_factor` 的移植结论；不能只更新 `web/` 后关闭同步任务。

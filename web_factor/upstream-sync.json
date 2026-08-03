@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "sourceDirectory": "web",
+  "upstreamVersion": "v1.4.1",
+  "upstreamCommit": "5d4c96dd12774574369e75b60084140101c9a59a",
+  "sourceWebTree": "6a3723d964901bbaace2460d1940a0d00ec9adb0",
+  "factorSourceBaselineCommit": "d16d1510da845709940ae5243ad3ca36a196d381",
+  "factorSyncedWebTree": "6a3723d964901bbaace2460d1940a0d00ec9adb0",
+  "antdVersion": "6.5.3",
+  "syncedAt": "2026-08-03"
+}
