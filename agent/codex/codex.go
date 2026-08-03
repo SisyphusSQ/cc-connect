@@ -36,6 +36,7 @@ type Agent struct {
 	workDir         string
 	model           string
 	reasoningEffort string
+	serviceTier     string
 	mode            string // "suggest" | "auto-edit" | "full-auto" | "yolo"
 	backend         string // "exec" | "app_server"
 	appServerURL    string
@@ -58,6 +59,7 @@ func New(opts map[string]any) (core.Agent, error) {
 	}
 	model, _ := opts["model"].(string)
 	reasoningEffort, _ := opts["reasoning_effort"].(string)
+	serviceTier, _ := opts["service_tier"].(string)
 	mode, _ := opts["mode"].(string)
 	backend, _ := opts["backend"].(string)
 	appServerURL, _ := opts["app_server_url"].(string)
@@ -67,6 +69,9 @@ func New(opts map[string]any) (core.Agent, error) {
 	mode = normalizeMode(mode)
 	backend = normalizeBackend(backend)
 	appServerURL = normalizeAppServerURL(appServerURL)
+	if strings.TrimSpace(serviceTier) == "" {
+		serviceTier = readCodexConfiguredServiceTier(codexHome)
+	}
 
 	cmd, cliExtraArgs := core.ParseCmdOpts(opts, "codex")
 
@@ -95,6 +100,7 @@ func New(opts map[string]any) (core.Agent, error) {
 		workDir:         workDir,
 		model:           model,
 		reasoningEffort: normalizeReasoningEffort(reasoningEffort),
+		serviceTier:     normalizeServiceTier(serviceTier),
 		mode:            mode,
 		backend:         backend,
 		appServerURL:    appServerURL,
@@ -201,6 +207,28 @@ func (a *Agent) GetReasoningEffort() string {
 
 func (a *Agent) AvailableReasoningEfforts() []string {
 	return []string{"low", "medium", "high", "xhigh"}
+}
+
+func (a *Agent) SetServiceTier(tier string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.serviceTier = normalizeServiceTier(tier)
+	slog.Info("codex: service tier changed", "service_tier", a.serviceTier)
+}
+
+func (a *Agent) GetServiceTier() string {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.serviceTier
+}
+
+func (a *Agent) AvailableServiceTiers(_ context.Context) []core.ServiceTierOption {
+	a.mu.RLock()
+	codexHome := a.codexHome
+	model := core.GetProviderModel(a.providers, a.activeIdx, a.model)
+	current := a.serviceTier
+	a.mu.RUnlock()
+	return availableCodexServiceTiers(codexHome, model, current)
 }
 
 func (a *Agent) configuredModels() []core.ModelOption {
@@ -353,7 +381,6 @@ func readCodexCachedModels() []core.ModelOption {
 	return parseCodexModelsJSON(b)
 }
 
-
 // parseCodexModelsJSON parses a Codex models JSON file (model_catalog.json
 // or models_cache.json) into a deduplicated, filtered slice of ModelOption.
 // It is shared by readCodexCachedModels and readCodexModelCatalog.
@@ -398,7 +425,6 @@ func parseCodexModelsJSON(data []byte) []core.ModelOption {
 	}
 	return models
 }
-
 
 // readCodexModelCatalog reads $CODEX_HOME/config.toml to find the
 // model_catalog_json setting, then reads and parses that JSON file.
@@ -466,6 +492,7 @@ func (a *Agent) StartSession(ctx context.Context, sessionID string) (core.AgentS
 	mode := a.mode
 	model := a.model
 	reasoningEffort := a.reasoningEffort
+	serviceTier := a.serviceTier
 	backend := a.backend
 	appServerURL := a.appServerURL
 	codexHome := a.codexHome
@@ -501,13 +528,20 @@ func (a *Agent) StartSession(ctx context.Context, sessionID string) (core.AgentS
 	}
 
 	if backend == "app_server" {
-		return newAppServerSession(ctx, appServerURL, workDir, model, reasoningEffort, mode, sessionID, baseURL, provName, extraEnv, codexHome, systemPrompt, appendPrompt)
+		return newAppServerSession(ctx, appServerURL, workDir, model, reasoningEffort, serviceTier, mode, sessionID, baseURL, provName, extraEnv, codexHome, systemPrompt, appendPrompt)
 	}
 	if codexHome != "" {
 		extraEnv = append(extraEnv, "CODEX_HOME="+codexHome)
 	}
 
-	return newCodexSession(ctx, cliBin, cliExtraArgs, workDir, model, reasoningEffort, mode, sessionID, baseURL, extraEnv, provName, systemPrompt, appendPrompt)
+	session, err := newCodexSession(ctx, cliBin, cliExtraArgs, workDir, model, reasoningEffort, mode, sessionID, baseURL, extraEnv, provName, systemPrompt, appendPrompt)
+	if err != nil {
+		return nil, err
+	}
+	if serviceTier != "" {
+		session.SetLiveServiceTier(serviceTier)
+	}
+	return session, nil
 }
 
 func (a *Agent) ListSessions(_ context.Context) ([]core.AgentSessionInfo, error) {
@@ -565,6 +599,9 @@ func (a *Agent) WorkspaceAgentOptions() map[string]any {
 	}
 	if a.reasoningEffort != "" {
 		opts["reasoning_effort"] = a.reasoningEffort
+	}
+	if a.serviceTier != "" {
+		opts["service_tier"] = a.serviceTier
 	}
 	if a.appServerURL != "" {
 		opts["app_server_url"] = a.appServerURL

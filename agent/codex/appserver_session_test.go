@@ -16,8 +16,9 @@ import (
 func TestAppServerSession_ApplyThreadRuntimeState(t *testing.T) {
 	s := &appServerSession{}
 	effort := "xhigh"
+	serviceTier := "priority"
 
-	s.applyThreadRuntimeState("/tmp/project", "gpt-5.4", &effort)
+	s.applyThreadRuntimeState("/tmp/project", "gpt-5.4", &effort, &serviceTier)
 
 	if got := s.GetWorkDir(); got != "/tmp/project" {
 		t.Fatalf("GetWorkDir() = %q, want /tmp/project", got)
@@ -27,6 +28,60 @@ func TestAppServerSession_ApplyThreadRuntimeState(t *testing.T) {
 	}
 	if got := s.GetReasoningEffort(); got != "xhigh" {
 		t.Fatalf("GetReasoningEffort() = %q, want xhigh", got)
+	}
+	if got := s.GetServiceTier(); got != "priority" {
+		t.Fatalf("GetServiceTier() = %q, want priority", got)
+	}
+	if got := s.threadRequestParams()["serviceTier"]; got != "priority" {
+		t.Fatalf("threadRequestParams serviceTier = %#v, want priority", got)
+	}
+}
+
+func TestAppServerSession_SetLiveServiceTierUsesThreadSettingsUpdate(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	stdin := &lockedWriteCloser{}
+	s := &appServerSession{
+		ctx:     ctx,
+		stdin:   stdin,
+		pending: make(map[int64]chan rpcResponseEnvelope),
+	}
+	s.alive.Store(true)
+	s.threadID.Store("thread-1")
+
+	done := make(chan bool, 1)
+	go func() {
+		done <- s.SetLiveServiceTier("priority")
+	}()
+
+	line := waitForWrittenJSONLine(t, stdin)
+	var request struct {
+		ID     int64  `json:"id"`
+		Method string `json:"method"`
+		Params struct {
+			ThreadID    string `json:"threadId"`
+			ServiceTier string `json:"serviceTier"`
+		} `json:"params"`
+	}
+	if err := json.Unmarshal([]byte(line), &request); err != nil {
+		t.Fatalf("decode request %q: %v", line, err)
+	}
+	if request.Method != "thread/settings/update" || request.Params.ThreadID != "thread-1" || request.Params.ServiceTier != "priority" {
+		t.Fatalf("request = %#v, want thread/settings/update for priority", request)
+	}
+	s.handleResponse(rpcResponseEnvelope{ID: request.ID, Result: json.RawMessage(`{}`)})
+
+	select {
+	case ok := <-done:
+		if !ok {
+			t.Fatal("SetLiveServiceTier returned false")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("SetLiveServiceTier did not complete")
+	}
+	if got := s.GetServiceTier(); got != "priority" {
+		t.Fatalf("GetServiceTier() = %q, want priority", got)
 	}
 }
 

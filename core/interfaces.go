@@ -513,11 +513,30 @@ type ReasoningEffortSwitcher interface {
 	AvailableReasoningEfforts() []string
 }
 
+// ServiceTierSwitcher is an optional interface for agents that support
+// runtime switching between provider service tiers (for example, standard
+// and priority processing).
+type ServiceTierSwitcher interface {
+	SetServiceTier(tier string)
+	GetServiceTier() string
+	AvailableServiceTiers(ctx context.Context) []ServiceTierOption
+}
+
 // ModelOption describes a selectable model.
 type ModelOption struct {
 	Name  string // model identifier passed to CLI
 	Desc  string // short description (display_name or empty)
 	Alias string // optional short alias for the /model command (e.g. "codex" for "gpt-5.3-codex")
+}
+
+// ServiceTierOption describes a selectable provider service tier. ID is the
+// value passed to the agent backend; Name and Description are display metadata
+// supplied by the backend's model catalog. Aliases are accepted by /speed.
+type ServiceTierOption struct {
+	ID          string
+	Name        string
+	Description string
+	Aliases     []string
 }
 
 // UsageReporter is an optional interface for agents that can report account or
@@ -669,6 +688,12 @@ type WorkspaceAgentOptionSnapshotter interface {
 // apply a mode change immediately without restarting the process.
 type LiveModeSwitcher interface {
 	SetLiveMode(mode string) bool
+}
+
+// LiveServiceTierSwitcher is implemented by running sessions that can apply
+// a service-tier change without discarding the current conversation.
+type LiveServiceTierSwitcher interface {
+	SetLiveServiceTier(tier string) bool
 }
 
 // StartupWarner is an optional interface for agent sessions that need to surface

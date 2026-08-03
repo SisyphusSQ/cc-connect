@@ -244,7 +244,7 @@ v1.5.0 正式版 —— 自 v1.4.1 起稳定化 beta.1 → beta.5（约 93 个 c
 **多机器人中继** — 在群聊中绑定多个机器人，让它们相互协作。问 Claude，再听 Gemini 的见解 — 同一个对话搞定。
 
 ### 🎮 完整的聊天控制
-**聊天即控制** — 切换模型 (`/model`)、切换推理强度 (`/reasoning`)、切换权限模式 (`/mode`)、管理会话，全部通过斜杠命令完成。
+**聊天即控制** — 切换模型 (`/model`)、切换推理强度 (`/reasoning`)、选择 Codex 响应速度 (`/speed`)、切换权限模式 (`/mode`)、管理会话，全部通过斜杠命令完成。
 
 **聊天切换工作目录** — 使用 `/dir <路径>` 切换下一次会话启动目录（`/cd <路径>` 为兼容别名），并支持 `/dir <序号>` / `/dir -` 快速在历史目录间跳转。
 
@@ -558,6 +558,14 @@ cc-connect doctor user-isolation
 ```
 /model                      列出可用模型（格式：alias - model）
 /model switch <alias>       按别名切换模型
+```
+
+### ⚡ Codex 响应速度
+
+```
+/speed                      查看当前速度和可选项
+/speed standard             使用默认 service tier
+/speed fast                 使用 priority 处理（会增加用量）
 ```
 
 

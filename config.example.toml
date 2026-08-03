@@ -720,8 +720,8 @@ level = "info" # debug, info, warn, error
 name = "my-backend"
 # reply_footer = false             # Master toggle for the per-turn reply footer (default: true / show)
 #                                   # 每条助手回复底部状态 footer 总开关（默认 true 显示）
-# show_context_indicator = false   # Hide the footer's first line: model · [effort ·] out/in/cw/cr · ctx % (default: true)
-#                                   # 隐藏 footer 第一行：model · [effort ·] out/in/cw/cr · ctx %（默认 true 显示）
+# show_context_indicator = false   # Hide the footer's first line: model · [effort ·] [speed ·] out/in/cw/cr · ctx % (default: true)
+#                                   # 隐藏 footer 第一行：model · [effort ·] [speed ·] out/in/cw/cr · ctx %（默认 true 显示）
 # show_workdir_indicator = false   # Hide the footer's second line: workspace directory (default: true)
 #                                   # 隐藏 footer 第二行：工作区目录（默认 true 显示）
 # disabled_commands = ["restart", "upgrade", "cron"]  # Disable specific commands for this project
@@ -1626,7 +1626,12 @@ app_secret = "your-feishu-app-secret"
 # model = "o3"
 #
 # Optional: specify Codex reasoning effort / 可选：指定 Codex 推理强度
-# reasoning_effort = "high"  # "minimal" | "low" | "medium" | "high" | "xhigh"
+# reasoning_effort = "high"  # "low" | "medium" | "high" | "xhigh"
+#
+# Optional: Codex response speed / 可选：Codex 响应速度
+# "priority" is shown as /speed fast and increases usage; "default" is standard speed.
+# "priority" 在 /speed 中显示为 fast，且会增加用量；"default" 为标准速度。
+# service_tier = "default"  # "default" | "priority"
 #
 # Optional: project system prompt / 可选：项目系统提示
 # Codex has no native system-prompt flag, so cc-connect injects this as a

@@ -49,9 +49,10 @@ import (
 // per StartSession call. Tests can mutate cujAgentSession.reply between
 // turns to simulate different agent responses.
 type cujAgent struct {
-	mu       sync.Mutex
-	sessions []*cujAgentSession
-	nextID   int
+	mu          sync.Mutex
+	sessions    []*cujAgentSession
+	nextID      int
+	serviceTier string
 
 	// failStartCount lets tests simulate "agent process won't start" — the
 	// next N StartSession calls return failStartErr. Set both > 0 to use.
@@ -96,6 +97,25 @@ func (a *cujAgent) ListSessions(_ context.Context) ([]AgentSessionInfo, error) {
 	return nil, nil
 }
 func (a *cujAgent) Stop() error { return nil }
+
+func (a *cujAgent) SetServiceTier(tier string) {
+	a.mu.Lock()
+	a.serviceTier = tier
+	a.mu.Unlock()
+}
+
+func (a *cujAgent) GetServiceTier() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.serviceTier
+}
+
+func (a *cujAgent) AvailableServiceTiers(_ context.Context) []ServiceTierOption {
+	return []ServiceTierOption{
+		{ID: "default", Name: "Standard", Aliases: []string{"standard"}},
+		{ID: "priority", Name: "Fast", Description: "1.5x speed, increased usage", Aliases: []string{"fast"}},
+	}
+}
 
 // cujAgentSession is an AgentSession whose reply is controllable per-Send.
 // Tests can set reply (and optionally toolEvent) before each Send to drive
@@ -1790,6 +1810,30 @@ func TestCUJ_F4_HotReloadBannedWordsTakesEffect(t *testing.T) {
 	// reaching the agent.
 	if afterCount > beforeCount {
 		t.Fatalf("hot-reload of banned_words did not take effect: agent received the message")
+	}
+}
+
+// CUJ-F5 · /speed lists the model-backed choices, accepts the user-facing
+// "fast" alias, and reports the updated choice on the next inspection.
+func TestCUJ_F5_SpeedSwitchChangesNextTurn(t *testing.T) {
+	env := newCUJEnv(t)
+
+	env.userSends("f5", "/speed")
+	env.userSends("f5", "/speed fast")
+	env.userSends("f5", "/speed")
+
+	env.waitFor("three speed replies", 2*time.Second, func() bool {
+		return len(env.plat.getSent()) >= 3
+	})
+	sent := env.plat.getSent()
+	if !strings.Contains(sent[0], "Available speeds") || !strings.Contains(sent[0], "Fast") {
+		t.Fatalf("first /speed did not show selectable speeds: %v", sent)
+	}
+	if !strings.Contains(sent[1], "Speed switched to `Fast`") {
+		t.Fatalf("switch confirmation missing: %v", sent)
+	}
+	if !strings.Contains(sent[2], "Current speed: Fast") {
+		t.Fatalf("updated speed was not visible on readback: %v", sent)
 	}
 }
 

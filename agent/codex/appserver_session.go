@@ -44,6 +44,7 @@ type threadStartResponse struct {
 	Cwd             string  `json:"cwd"`
 	Model           string  `json:"model"`
 	ReasoningEffort *string `json:"reasoningEffort"`
+	ServiceTier     *string `json:"serviceTier"`
 	Thread          struct {
 		ID string `json:"id"`
 	} `json:"thread"`
@@ -53,6 +54,7 @@ type threadResumeResponse struct {
 	Cwd             string  `json:"cwd"`
 	Model           string  `json:"model"`
 	ReasoningEffort *string `json:"reasoningEffort"`
+	ServiceTier     *string `json:"serviceTier"`
 	Thread          struct {
 		ID string `json:"id"`
 	} `json:"thread"`
@@ -145,6 +147,7 @@ type appServerSession struct {
 	workDir        string
 	model          string
 	effort         string
+	serviceTier    string
 	mode           string
 	baseURL        string
 	modelProvider  string
@@ -189,15 +192,17 @@ type appServerSession struct {
 const (
 	appServerRequestTimeout      = 120 * time.Second
 	appServerUsageRefreshTimeout = 1500 * time.Millisecond
+	appServerSettingsTimeout     = 3 * time.Second
 )
 
-func newAppServerSession(ctx context.Context, url, workDir, model, effort, mode, resumeID, baseURL, modelProvider string, extraEnv []string, codexHome string, systemPrompt string, appendPrompt string) (*appServerSession, error) {
+func newAppServerSession(ctx context.Context, url, workDir, model, effort, serviceTier, mode, resumeID, baseURL, modelProvider string, extraEnv []string, codexHome string, systemPrompt string, appendPrompt string) (*appServerSession, error) {
 	sessionCtx, cancel := context.WithCancel(ctx)
 	s := &appServerSession{
 		url:              url,
 		workDir:          workDir,
 		model:            model,
 		effort:           effort,
+		serviceTier:      normalizeServiceTier(serviceTier),
 		mode:             mode,
 		baseURL:          baseURL,
 		modelProvider:    modelProvider,
@@ -244,6 +249,9 @@ func (s *appServerSession) connect() error {
 	}
 	if effort := strings.TrimSpace(s.effort); effort != "" {
 		args = append(args, "-c", fmt.Sprintf("model_reasoning_effort=%q", effort))
+	}
+	if tier := strings.TrimSpace(s.serviceTier); tier != "" {
+		args = append(args, "-c", fmt.Sprintf("service_tier=%q", tier))
 	}
 	if provider := strings.TrimSpace(s.modelProvider); provider != "" {
 		args = append(args, "-c", fmt.Sprintf("model_provider=%q", provider))
@@ -334,7 +342,7 @@ func (s *appServerSession) ensureThread(resumeID string) error {
 		if resp.Thread.ID == "" {
 			return fmt.Errorf("codex app-server resume returned empty thread id")
 		}
-		s.applyThreadRuntimeState(resp.Cwd, resp.Model, resp.ReasoningEffort)
+		s.applyThreadRuntimeState(resp.Cwd, resp.Model, resp.ReasoningEffort, resp.ServiceTier)
 		s.threadID.Store(resp.Thread.ID)
 		slog.Info("codex app-server thread resumed", "thread_id", resp.Thread.ID)
 		return nil
@@ -347,7 +355,7 @@ func (s *appServerSession) ensureThread(resumeID string) error {
 	if resp.Thread.ID == "" {
 		return fmt.Errorf("codex app-server start returned empty thread id")
 	}
-	s.applyThreadRuntimeState(resp.Cwd, resp.Model, resp.ReasoningEffort)
+	s.applyThreadRuntimeState(resp.Cwd, resp.Model, resp.ReasoningEffort, resp.ServiceTier)
 	s.threadID.Store(resp.Thread.ID)
 	slog.Info("codex app-server thread started", "thread_id", resp.Thread.ID)
 	return nil
@@ -360,6 +368,9 @@ func (s *appServerSession) threadRequestParams() map[string]any {
 	}
 	if model := s.GetModel(); model != "" {
 		params["model"] = model
+	}
+	if tier := s.GetServiceTier(); tier != "" {
+		params["serviceTier"] = tier
 	}
 	if approval, sandbox := appServerModeSettings(s.mode); approval != "" {
 		params["approvalPolicy"] = approval
@@ -381,7 +392,7 @@ func appServerModeSettings(mode string) (approval string, sandbox string) {
 	}
 }
 
-func (s *appServerSession) applyThreadRuntimeState(workDir, model string, effort *string) {
+func (s *appServerSession) applyThreadRuntimeState(workDir, model string, effort, serviceTier *string) {
 	s.runtimeMu.Lock()
 	defer s.runtimeMu.Unlock()
 	if dir := strings.TrimSpace(workDir); dir != "" {
@@ -391,6 +402,9 @@ func (s *appServerSession) applyThreadRuntimeState(workDir, model string, effort
 		s.model = m
 	}
 	s.effort = normalizeRuntimeReasoningEffort(stringValue(effort))
+	if tier := normalizeServiceTier(stringValue(serviceTier)); tier != "" {
+		s.serviceTier = tier
+	}
 }
 
 func (s *appServerSession) refreshUsage(ctx context.Context) error {
@@ -490,6 +504,9 @@ func (s *appServerSession) Send(prompt string, messageID string, images []core.I
 	}
 	if effort := s.GetReasoningEffort(); effort != "" {
 		params["effort"] = effort
+	}
+	if tier := s.GetServiceTier(); tier != "" {
+		params["serviceTier"] = tier
 	}
 	if approval, _ := appServerModeSettings(s.mode); approval != "" {
 		params["approvalPolicy"] = approval
@@ -914,6 +931,32 @@ func (s *appServerSession) GetReasoningEffort() string {
 	s.runtimeMu.RLock()
 	defer s.runtimeMu.RUnlock()
 	return strings.TrimSpace(s.effort)
+}
+
+func (s *appServerSession) GetServiceTier() string {
+	s.runtimeMu.RLock()
+	defer s.runtimeMu.RUnlock()
+	return strings.TrimSpace(s.serviceTier)
+}
+
+func (s *appServerSession) SetLiveServiceTier(tier string) bool {
+	tier = normalizeServiceTier(tier)
+	threadID := s.CurrentSessionID()
+	if tier == "" || threadID == "" || !s.Alive() {
+		return false
+	}
+	params := map[string]any{
+		"threadId":    threadID,
+		"serviceTier": tier,
+	}
+	if err := s.requestWithTimeout("thread/settings/update", params, nil, appServerSettingsTimeout); err != nil {
+		slog.Warn("codex app-server: service tier update failed", "thread_id", threadID, "service_tier", tier, "error", err)
+		return false
+	}
+	s.runtimeMu.Lock()
+	s.serviceTier = tier
+	s.runtimeMu.Unlock()
+	return true
 }
 
 func (s *appServerSession) GetUsage(ctx context.Context) (*core.UsageReport, error) {

@@ -46,6 +46,7 @@ cc-connect 完整功能使用指南。
 | `/show <引用>` | 按引用查看文件、目录或代码片段 |
 | `/allow <工具名>` | 预授权工具 |
 | `/reasoning [等级]` | 查看或切换推理强度（Codex）|
+| `/speed [standard\|fast]` | 查看或切换 Codex 响应速度 |
 | `/mode [名称]` | 查看或切换权限模式 |
 | `/stop` | 停止当前执行 |
 | `/help` | 显示可用命令 |
@@ -246,6 +247,18 @@ alias = "spark"
 ```
 
 配置了 `models` 时，`/model` 直接显示该列表，不发起 API 请求。未配置时，自动从 Provider API 获取或使用内置备选列表。
+
+### Codex 响应速度
+
+Codex 0.146.0 及以上版本会在模型目录中提供模型支持的 service tier。cc-connect 会读取当前生效的模型目录，并通过 `/speed` 展示可选速度：
+
+```text
+/speed             查看当前速度和可选项
+/speed standard    使用默认 service tier
+/speed fast        使用 Codex priority 处理（会增加用量）
+```
+
+所选 tier 会同时传给 Codex exec 和 app-server 后端；回复 footer 会以 `speed:standard` 或 `speed:fast` 显示当前值。也可以在 `[projects.agent.options]` 下用 `service_tier = "default"` 或 `service_tier = "priority"` 设置启动值。
 
 ---
 
