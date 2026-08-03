@@ -65,8 +65,14 @@ release/
 # Keep web/dist directory (for embedded admin UI) but ignore build artifacts
 web/dist/*
 !web/dist/.keep
+!web_factor/dist/
+web_factor/dist/*
+!web_factor/dist/.keep
 # TypeScript incremental build cache — generated locally, should not be committed
 web/tsconfig.tsbuildinfo
+web_factor/tsconfig.tsbuildinfo
+.playwright-cli/
+output/playwright/
 
 # ============================================================================
 # Testing & temporary files

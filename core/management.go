@@ -259,7 +259,7 @@ func (m *ManagementServer) buildHandler(mux *http.ServeMux) http.Handler {
 	// Bridge
 	mux.HandleFunc(prefix+"/bridge/adapters", m.wrap(m.handleBridgeAdapters))
 
-	// Static file serving for cc-connect-web (SPA)
+	// Static file serving for the selected CC-Connect frontend (SPA)
 	return m.withStaticFallback(mux)
 }
 

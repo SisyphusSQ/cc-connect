@@ -5,7 +5,7 @@ import "io/fs"
 var webAssetsFS fs.FS
 
 // RegisterWebAssets registers the embedded web frontend assets.
-// Called from web/embed.go's init() function.
+// Called from the selected frontend package's embed init function.
 func RegisterWebAssets(fsys fs.FS) {
 	webAssetsFS = fsys
 }
