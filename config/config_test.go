@@ -1642,6 +1642,31 @@ func TestLoad_DefaultsAttachmentSendToOn(t *testing.T) {
 	}
 }
 
+func TestConfig_ParsesManagementAndBridgeListenHosts(t *testing.T) {
+	raw := `
+[management]
+enabled = true
+listen_host = "127.0.0.1"
+port = 9820
+
+[bridge]
+enabled = true
+listen_host = "::1"
+port = 9810
+token = "test-token"
+`
+	var cfg Config
+	if _, err := toml.Decode(raw, &cfg); err != nil {
+		t.Fatalf("decode config: %v", err)
+	}
+	if cfg.Management.ListenHost != "127.0.0.1" {
+		t.Fatalf("management listen_host = %q, want 127.0.0.1", cfg.Management.ListenHost)
+	}
+	if cfg.Bridge.ListenHost != "::1" {
+		t.Fatalf("bridge listen_host = %q, want ::1", cfg.Bridge.ListenHost)
+	}
+}
+
 func TestLoad_DefaultsAutoCompressDisabled(t *testing.T) {
 	configPath := writeConfigFixture(t, projectWithoutFeishuFixture)
 

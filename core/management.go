@@ -35,6 +35,7 @@ type ProjectSettingsUpdate struct {
 // ManagementServer provides an HTTP REST API for external management tools
 // (web dashboards, TUI clients, GUI desktop apps, Mac tray apps, etc.).
 type ManagementServer struct {
+	listenHost  string
 	port        int
 	token       string
 	corsOrigins []string
@@ -75,12 +76,19 @@ type ManagementServer struct {
 // NewManagementServer creates a new management API server.
 func NewManagementServer(port int, token string, corsOrigins []string) *ManagementServer {
 	return &ManagementServer{
+		listenHost:  defaultLocalListenHost,
 		port:        port,
 		token:       token,
 		corsOrigins: corsOrigins,
 		engines:     make(map[string]*Engine),
 		startedAt:   time.Now(),
 	}
+}
+
+// SetListenHost configures the management bind address. Empty defaults to
+// loopback; use "*" only when authenticated LAN exposure is intentional.
+func (m *ManagementServer) SetListenHost(host string) {
+	m.listenHost = normalizeListenHost(host)
 }
 
 func (m *ManagementServer) RegisterEngine(name string, e *Engine) {
@@ -145,10 +153,10 @@ type GlobalProviderInfo struct {
 		Model string `json:"model"`
 		Alias string `json:"alias,omitempty"`
 	} `json:"models,omitempty"`
-	Endpoints       map[string]string              `json:"endpoints,omitempty"`
-	AgentModels     map[string]string              `json:"agent_models,omitempty"`
-	AgentModelLists map[string][]GlobalModelEntry   `json:"agent_model_lists,omitempty"`
-	Codex           *GlobalCodexConfig              `json:"codex,omitempty"`
+	Endpoints       map[string]string             `json:"endpoints,omitempty"`
+	AgentModels     map[string]string             `json:"agent_models,omitempty"`
+	AgentModelLists map[string][]GlobalModelEntry `json:"agent_model_lists,omitempty"`
+	Codex           *GlobalCodexConfig            `json:"codex,omitempty"`
 }
 
 // GlobalModelEntry is a model entry inside AgentModelLists.
@@ -200,7 +208,7 @@ func (m *ManagementServer) Start() {
 	handler := m.buildHandler(mux)
 
 	m.server = &http.Server{
-		Addr:    fmt.Sprintf(":%d", m.port),
+		Addr:    listenAddr(m.listenHost, m.port),
 		Handler: handler,
 	}
 	go func() {
@@ -208,7 +216,7 @@ func (m *ManagementServer) Start() {
 			slog.Error("management api server error", "error", err)
 		}
 	}()
-	slog.Info("management api started", "port", m.port)
+	slog.Info("management api started", "addr", m.server.Addr)
 }
 
 func (m *ManagementServer) buildHandler(mux *http.ServeMux) http.Handler {
@@ -1905,10 +1913,10 @@ func (m *ManagementServer) handleCCSwitchProviders(w http.ResponseWriter, r *htt
 // applying per-agent-type overrides for base_url, model, and models.
 func resolveGlobalProviderForAgent(g GlobalProviderInfo, agentType string) ProviderConfig {
 	pc := ProviderConfig{
-		Name:   g.Name,
-		APIKey: g.APIKey,
+		Name:    g.Name,
+		APIKey:  g.APIKey,
 		BaseURL: g.BaseURL,
-		Model:  g.Model,
+		Model:   g.Model,
 	}
 	if ep, ok := g.Endpoints[agentType]; ok && ep != "" {
 		pc.BaseURL = ep

@@ -1740,6 +1740,128 @@ func TestAllowChat_FiltersGroupMessages(t *testing.T) {
 	}
 }
 
+func TestScopedAllowFrom_SeparatesGroupAndPrivateUsers(t *testing.T) {
+	p := &Platform{
+		allowFrom:        "ou_legacy",
+		groupAllowFrom:   "*",
+		privateAllowFrom: "ou_owner",
+	}
+
+	tests := []struct {
+		name     string
+		chatType string
+		userID   string
+		want     bool
+	}{
+		{name: "group allows any user", chatType: "group", userID: "ou_member", want: true},
+		{name: "topic group uses group policy", chatType: "topic_group", userID: "ou_member", want: true},
+		{name: "private allows owner", chatType: "p2p", userID: "ou_owner", want: true},
+		{name: "private rejects other user", chatType: "p2p", userID: "ou_member", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := p.userAllowed(tt.chatType, tt.userID); got != tt.want {
+				t.Fatalf("userAllowed(%q, %q) = %v, want %v", tt.chatType, tt.userID, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestScopedAllowFrom_UnsetScopesFallBackToLegacyAllowFrom(t *testing.T) {
+	p := &Platform{allowFrom: "ou_owner"}
+
+	if !p.userAllowed("group", "ou_owner") {
+		t.Fatal("legacy allow_from should allow owner in group chat")
+	}
+	if !p.userAllowed("p2p", "ou_owner") {
+		t.Fatal("legacy allow_from should allow owner in private chat")
+	}
+	if p.userAllowed("group", "ou_member") {
+		t.Fatal("legacy allow_from should reject other group user")
+	}
+	if p.userAllowed("p2p", "ou_member") {
+		t.Fatal("legacy allow_from should reject other private user")
+	}
+}
+
+func TestCardActionScopedAllowFrom_AuthorizesByChatType(t *testing.T) {
+	platformAny, err := New(map[string]any{
+		"app_id":             "cli_xxx",
+		"app_secret":         "secret",
+		"enable_feishu_card": true,
+		"group_allow_from":   "*",
+		"private_allow_from": "ou_owner",
+		"allow_chat":         "*",
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	ip := platformAny.(*interactivePlatform)
+	ip.rememberChatType("oc_group", "group")
+	ip.rememberChatType("oc_private", "p2p")
+
+	msgCh := make(chan *core.Message, 3)
+	ip.handler = func(_ core.Platform, msg *core.Message) {
+		msgCh <- msg
+	}
+
+	trigger := func(chatID, userID string) {
+		t.Helper()
+		_, err := ip.onCardAction(&callback.CardActionTriggerEvent{
+			Event: &callback.CardActionTriggerRequest{
+				Operator: &callback.Operator{OpenID: userID},
+				Action:   &callback.CallBackAction{Value: map[string]any{"action": "cmd:/help"}},
+				Context:  &callback.Context{OpenChatID: chatID, OpenMessageID: "om_test"},
+			},
+		})
+		if err != nil {
+			t.Fatalf("onCardAction() error = %v", err)
+		}
+	}
+
+	trigger("oc_group", "ou_member")
+	select {
+	case msg := <-msgCh:
+		if msg.UserID != "ou_member" {
+			t.Fatalf("group card action user = %q, want ou_member", msg.UserID)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("group member card action should be handled")
+	}
+
+	trigger("oc_private", "ou_member")
+	select {
+	case msg := <-msgCh:
+		t.Fatalf("unauthorized private card action was handled: %#v", msg)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	trigger("oc_private", "ou_owner")
+	select {
+	case msg := <-msgCh:
+		if msg.UserID != "ou_owner" {
+			t.Fatalf("private card action user = %q, want ou_owner", msg.UserID)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("private owner card action should be handled")
+	}
+
+	trigger("oc_group", "")
+	select {
+	case msg := <-msgCh:
+		t.Fatalf("card action without operator identity was handled: %#v", msg)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	trigger("oc_unknown", "ou_member")
+	select {
+	case msg := <-msgCh:
+		t.Fatalf("card action with unknown chat type was handled: %#v", msg)
+	case <-time.After(100 * time.Millisecond):
+	}
+}
+
 // --- Mention resolution tests ---
 
 func TestResolveMentions_ReplacesKnownMember(t *testing.T) {

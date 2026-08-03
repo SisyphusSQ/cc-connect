@@ -1068,6 +1068,7 @@ func main() {
 			slog.Error("bridge: failed to create server - token is required (or set insecure=true for local dev)")
 			os.Exit(1)
 		}
+		bridgeSrv.SetListenHost(cfg.Bridge.ListenHost)
 		for i, e := range engines {
 			bp := bridgeSrv.NewPlatform(cfg.Projects[i].Name)
 			bridgeSrv.RegisterEngine(cfg.Projects[i].Name, e, bp)
@@ -1102,6 +1103,7 @@ func main() {
 			port = 9820
 		}
 		mgmtSrv = core.NewManagementServer(port, cfg.Management.Token, cfg.Management.CORSOrigins)
+		mgmtSrv.SetListenHost(cfg.Management.ListenHost)
 		for i, e := range engines {
 			mgmtSrv.RegisterEngine(cfg.Projects[i].Name, e)
 		}

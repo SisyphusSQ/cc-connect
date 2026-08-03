@@ -124,6 +124,8 @@ type Platform struct {
 	reactionEmoji              string
 	doneEmoji                  string
 	allowFrom                  string
+	groupAllowFrom             string
+	privateAllowFrom           string
 	allowChat                  string
 	groupOnly                  bool
 	groupReplyAll              bool
@@ -146,6 +148,7 @@ type Platform struct {
 	userNameCache    sync.Map          // open_id -> display name
 	chatNameCache    sync.Map          // chat_id -> chat name
 	chatMemberCache  sync.Map          // chatID -> *chatMemberEntry
+	chatTypeCache    sync.Map          // chatID -> normalized chat type (group or p2p)
 	recalledMu       sync.Mutex
 	recalledMsgIDs   map[string]time.Time // message_id -> recall time, short TTL race guard
 	// Webhook mode fields (for Lark international version)
@@ -294,7 +297,22 @@ func newPlatform(name, domain string, opts map[string]any) (core.Platform, error
 		doneEmoji = ""
 	}
 	allowFrom, _ := opts["allow_from"].(string)
-	core.CheckAllowFrom(name, allowFrom)
+	groupAllowFrom, _ := opts["group_allow_from"].(string)
+	privateAllowFrom, _ := opts["private_allow_from"].(string)
+	if strings.TrimSpace(groupAllowFrom) != "" || strings.TrimSpace(privateAllowFrom) != "" {
+		groupEffective := groupAllowFrom
+		if strings.TrimSpace(groupEffective) == "" {
+			groupEffective = allowFrom
+		}
+		privateEffective := privateAllowFrom
+		if strings.TrimSpace(privateEffective) == "" {
+			privateEffective = allowFrom
+		}
+		core.CheckAllowFrom(name+" (group)", groupEffective)
+		core.CheckAllowFrom(name+" (private)", privateEffective)
+	} else {
+		core.CheckAllowFrom(name, allowFrom)
+	}
 	allowChat, _ := opts["allow_chat"].(string)
 	groupOnly, _ := opts["group_only"].(bool)
 	groupReplyAll, _ := opts["group_reply_all"].(bool)
@@ -375,6 +393,8 @@ func newPlatform(name, domain string, opts map[string]any) (core.Platform, error
 		reactionEmoji:              reactionEmoji,
 		doneEmoji:                  doneEmoji,
 		allowFrom:                  allowFrom,
+		groupAllowFrom:             groupAllowFrom,
+		privateAllowFrom:           privateAllowFrom,
 		allowChat:                  allowChat,
 		groupOnly:                  groupOnly,
 		groupReplyAll:              groupReplyAll,
@@ -641,13 +661,6 @@ func (p *Platform) onCardAction(event *callback.CardActionTriggerEvent) (*callba
 		return nil, nil
 	}
 
-	// Check allow_chat filter: skip card actions from chats this platform doesn't own.
-	if event.Event.Context != nil && event.Event.Context.OpenChatID != "" {
-		if !core.AllowList(p.allowChat, event.Event.Context.OpenChatID) {
-			return nil, nil
-		}
-	}
-
 	actionVal, _ := event.Event.Action.Value["action"].(string)
 
 	// select_static callbacks put the chosen value in event.Event.Action.Option
@@ -673,6 +686,10 @@ func (p *Platform) onCardAction(event *callback.CardActionTriggerEvent) (*callba
 	if event.Event.Operator != nil {
 		userID = event.Event.Operator.OpenID
 	}
+	if strings.TrimSpace(userID) == "" {
+		slog.Warn(p.tag() + ": card action skipped because operator identity is missing")
+		return nil, nil
+	}
 	chatID := ""
 	messageID := ""
 	if event.Event.Context != nil {
@@ -681,6 +698,26 @@ func (p *Platform) onCardAction(event *callback.CardActionTriggerEvent) (*callba
 	}
 	if chatID == "" {
 		chatID = userID
+	}
+	chatType, chatTypeKnown := p.cachedChatType(chatID)
+	if chatTypeKnown {
+		if chatType == "group" && !core.AllowList(p.allowChat, chatID) {
+			slog.Debug(p.tag()+": card action from unauthorized chat", "chat_id", chatID, "user", userID)
+			return nil, nil
+		}
+	} else if !core.AllowList(p.allowChat, chatID) {
+		// Preserve the legacy fail-closed allow_chat behavior for cards created
+		// before this process observed the chat type.
+		return nil, nil
+	}
+	if p.hasScopedAllowFrom() && !chatTypeKnown {
+		slog.Warn(p.tag()+": card action skipped because chat type is unknown with scoped allowlists",
+			"chat_id", chatID, "user", userID)
+		return nil, nil
+	}
+	if !p.userAllowed(chatType, userID) {
+		slog.Debug(p.tag()+": card action from unauthorized user", "chat_id", chatID, "user", userID, "chat_type", chatType)
+		return nil, nil
 	}
 	sessionKey := p.sessionKeyFromCardAction(chatID, userID, event.Event.Action.Value)
 
@@ -1291,6 +1328,7 @@ func (p *Platform) onMessage(ctx context.Context, event *larkim.P2MessageReceive
 	if msg.ChatType != nil {
 		chatType = *msg.ChatType
 	}
+	p.rememberChatType(chatID, chatType)
 	mentionCount := len(msg.Mentions)
 	slog.Debug(p.tag()+": inbound message",
 		"message_id", messageID,
@@ -1329,7 +1367,7 @@ func (p *Platform) onMessage(ctx context.Context, event *larkim.P2MessageReceive
 		}
 	}
 
-	if !core.AllowList(p.allowFrom, userID) {
+	if !p.userAllowed(chatType, userID) {
 		slog.Debug(p.tag()+": message from unauthorized user", "user", userID)
 		p.replyUnauthorizedAccess(ctx, replyContext{messageID: messageID, chatID: chatID, sessionKey: sessionKey})
 		return nil
@@ -1384,6 +1422,56 @@ func (p *Platform) replyUnauthorizedAccess(ctx context.Context, rctx replyContex
 	if err := p.Reply(ctx, rctx, core.UnauthorizedAccessMessage); err != nil {
 		slog.Warn(p.tag()+": unauthorized reply failed", "error", err)
 	}
+}
+
+func (p *Platform) hasScopedAllowFrom() bool {
+	return strings.TrimSpace(p.groupAllowFrom) != "" || strings.TrimSpace(p.privateAllowFrom) != ""
+}
+
+func normalizeChatType(chatType string) string {
+	switch strings.ToLower(strings.TrimSpace(chatType)) {
+	case "group", "topic_group":
+		return "group"
+	case "p2p", "private":
+		return "p2p"
+	default:
+		return ""
+	}
+}
+
+func (p *Platform) allowFromForChatType(chatType string) string {
+	if normalizeChatType(chatType) == "group" {
+		if scoped := strings.TrimSpace(p.groupAllowFrom); scoped != "" {
+			return scoped
+		}
+		return p.allowFrom
+	}
+	if scoped := strings.TrimSpace(p.privateAllowFrom); scoped != "" {
+		return scoped
+	}
+	return p.allowFrom
+}
+
+func (p *Platform) userAllowed(chatType, userID string) bool {
+	return core.AllowList(p.allowFromForChatType(chatType), userID)
+}
+
+func (p *Platform) rememberChatType(chatID, chatType string) {
+	chatID = strings.TrimSpace(chatID)
+	normalized := normalizeChatType(chatType)
+	if chatID == "" || normalized == "" {
+		return
+	}
+	p.chatTypeCache.Store(chatID, normalized)
+}
+
+func (p *Platform) cachedChatType(chatID string) (string, bool) {
+	value, ok := p.chatTypeCache.Load(strings.TrimSpace(chatID))
+	if !ok {
+		return "", false
+	}
+	chatType, ok := value.(string)
+	return chatType, ok && chatType != ""
 }
 
 // dispatchMessage handles the message content parsing, media download, and
@@ -4803,7 +4891,7 @@ func (p *Platform) onBotMenu(event *larkapplication.P2BotMenuV6) error {
 		return nil
 	}
 
-	if !core.AllowList(p.allowFrom, userID) {
+	if !p.userAllowed("p2p", userID) {
 		slog.Debug(p.tag()+": menu event from unauthorized user", "user", userID, "event_key", eventKey)
 		return nil
 	}
@@ -6251,10 +6339,9 @@ func buildRichCardJSONBytes(status core.CardStatus, steps []core.ToolStep, markd
 				continue
 			}
 			footerElements = append(footerElements, map[string]any{
-				"tag":        "markdown",
-				"content":    sanitizeCardMarkdownForCard(line),
-				"text_size":  "notation",
-
+				"tag":       "markdown",
+				"content":   sanitizeCardMarkdownForCard(line),
+				"text_size": "notation",
 			})
 		}
 	}
