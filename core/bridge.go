@@ -24,6 +24,7 @@ import (
 // A single instance is created globally; each project engine receives a
 // lightweight BridgePlatform handle that delegates to this server.
 type BridgeServer struct {
+	listenHost  string
 	port        int
 	token       string
 	path        string
@@ -184,6 +185,7 @@ func newBridgeServer(port int, token, path string, corsOrigins []string, insecur
 	}
 
 	return &BridgeServer{
+		listenHost:  defaultLocalListenHost,
 		port:        port,
 		token:       token,
 		path:        path,
@@ -192,6 +194,12 @@ func newBridgeServer(port int, token, path string, corsOrigins []string, insecur
 		adapters:    make(map[string]*bridgeAdapter),
 		engines:     make(map[string]*bridgeEngineRef),
 	}
+}
+
+// SetListenHost configures the Bridge bind address. Empty defaults to
+// loopback; use "*" only when authenticated LAN exposure is intentional.
+func (bs *BridgeServer) SetListenHost(host string) {
+	bs.listenHost = normalizeListenHost(host)
 }
 
 // NewPlatform creates a BridgePlatform for a specific project engine.
@@ -219,7 +227,7 @@ func (bs *BridgeServer) Start() {
 	mux.HandleFunc("/bridge/sessions", bs.corsHTTP(bs.authHTTP(bs.handleSessions)))
 	mux.HandleFunc("/bridge/sessions/", bs.corsHTTP(bs.authHTTP(bs.handleSessionRoutes)))
 
-	addr := fmt.Sprintf(":%d", bs.port)
+	addr := listenAddr(bs.listenHost, bs.port)
 	bs.server = &http.Server{Addr: addr, Handler: mux}
 
 	go func() {

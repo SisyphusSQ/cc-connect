@@ -107,6 +107,10 @@ type = "feishu"
 [projects.platforms.options]
 app_id = "cli_axxxxxxxxxxxx"
 app_secret = "QhkMpxxxxxxxxxxxxxxxxxxxx"
+# allow_from = "ou_xxx"          # 群聊和私聊共用的用户白名单（兼容旧配置）
+# group_allow_from = "*"         # 可选：群聊用户白名单；未设置时回退到 allow_from
+# private_allow_from = "ou_xxx"  # 可选：私聊用户白名单；未设置时回退到 allow_from
+# allow_chat = "*"               # 允许所有群；也可以填写逗号分隔的 chat_id
 # domain = "https://open.feishu.cn" # 可选：覆盖运行时 API/WebSocket 域名
 # enable_feishu_card = true  # 可选：关闭后统一回退纯文本回复
 # thread_isolation = true    # 可选：按飞书 thread/root 隔离群聊会话
@@ -122,6 +126,17 @@ app_secret = "QhkMpxxxxxxxxxxxxxxxxxxxx"
 > `domain` 只影响运行时 API / WebSocket 请求地址；CLI `setup/new/bind` 的引导域名仍然使用内置默认值。
 > `done_emoji` 设置后，agent 每次完成回复时会在用户消息上添加指定表情（如 `"Done"` → ✅）。先移除 "OnIt" 表情（如果有），再添加 done 表情。在 quiet 模式下特别有用，因为飞书卡片原地更新不触发推送，done 表情可以通知用户 agent 已完成。设为 `"none"` 或不配置则禁用。
 > `image_batch_window_ms` 控制连续多张图片合并成一条 agent 消息的等待窗口（默认 500ms）。飞书手机端一次连发多张图时，每张图是独立事件；cc-connect 会在窗口内将它们合并成一条多图消息再分发给 agent。如果你的网络/设备发送间隔超过 500ms 且仍被拆成多轮回复（每张图独立处理），可调高到 800–1200ms；如果以单图为主、希望响应更快，可适当调低。设为 `0` 时回退到默认 500ms。
+
+需要“所有群成员可通过 @ 使用，但私聊只允许管理员”时，可以组合：
+
+```toml
+group_allow_from = "*"
+private_allow_from = "ou_admin_open_id"
+allow_chat = "*"
+group_reply_all = false
+```
+
+`group_reply_all = false` 表示群聊仍需明确 @机器人。普通消息和交互卡片回调会按会话类型应用白名单；Bot 菜单没有群聊上下文，因此按私聊白名单处理。启用分场景白名单后，进程重启前生成的旧卡片会在新进程重新观察到该会话消息前安全拒绝回调。
 
 ---
 
