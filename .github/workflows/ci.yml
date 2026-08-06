@@ -1,12 +1,8 @@
 name: CI
 
 on:
-  push:
-    branches: [main, suqing/main]
-  pull_request:
-    branches: [main, suqing/main]
-  release:
-    types: [published]
+  # Automatic CI is disabled in this personal fork. Run it explicitly when needed.
+  workflow_dispatch:
 
 jobs:
   lint:
