@@ -78,6 +78,7 @@ output/playwright/
 # Testing & temporary files
 # ============================================================================
 test/
+!web_factor/src/test/
 scripts/
 tmp/
 temp/
