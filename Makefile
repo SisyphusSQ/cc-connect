@@ -65,11 +65,19 @@ endif
 _BUILD_TAGS := $(strip $(_EXCLUDE_TAGS) goolm)
 _TAGS_FLAG  := $(if $(_BUILD_TAGS),-tags '$(_BUILD_TAGS)',)
 
-.PHONY: build run clean test test-fast test-full test-smoke test-e2e test-release test-release-local test-performance pre-test lint release release-all web
+.PHONY: build run clean test test-fast test-full test-smoke test-e2e test-release test-release-local test-performance pre-test lint release release-all web web-factor web-upstream web-all
 
-web:
-	@if [ ! -d web/node_modules ]; then cd web && npm install; fi
-	cd web && npm run build
+web: web-factor
+
+web-factor:
+	@if [ ! -d web_factor/node_modules ]; then pnpm --dir web_factor install --frozen-lockfile; fi
+	pnpm --dir web_factor build
+
+web-upstream:
+	@if [ ! -d web/node_modules ]; then pnpm --dir web install --frozen-lockfile; fi
+	pnpm --dir web build
+
+web-all: web-upstream web-factor
 
 build: web
 	go build $(_TAGS_FLAG) -ldflags "$(LDFLAGS)" -o $(APP) $(CMD)
@@ -172,6 +180,7 @@ release:
 		echo "Available: $(PLATFORMS)"; \
 		exit 1; \
 	fi
+	$(MAKE) web
 	@mkdir -p $(DIST)
 	$(eval GOOS   := $(word 1,$(subst /, ,$(TARGET))))
 	$(eval GOARCH := $(word 2,$(subst /, ,$(TARGET))))
