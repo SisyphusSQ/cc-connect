@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.4.1-1 (2026-08-07)
+
+Fork follow-up release based on upstream v1.4.1. The management binary now embeds the Factor frontend, while the upstream `web/` tree remains available for synchronization and shared contract sources.
+
+### Changed
+- **Web admin packaging**: release builds embed `web_factor/dist`; the legacy `web` Go embed package is no longer compiled.
+- **Build and CI**: default release and CI paths build only `web_factor`; upstream frontend checks remain available through the explicit `make web-upstream` and `make web-all` targets.
+
+### Distribution note
+- Automatic-update and npm distribution endpoints remain unchanged and continue to target the upstream project.
+
 ## v1.4.1 (2026-06-28)
 
 Patch release focused on Kimi CLI compatibility for users on the newer `kimi-code` 0.14.x (which removed the `--print` flag). v1.4.1 probes the Kimi CLI at startup and conditionally passes `--print` only when the installed binary supports it. Older `kimi-cli` 1.48.x users keep working as-is — no config change required either way.

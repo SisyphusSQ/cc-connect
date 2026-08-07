@@ -62,7 +62,7 @@ dist/
 build/
 bin/
 release/
-# Keep web/dist directory (for embedded admin UI) but ignore build artifacts
+# Keep upstream web/dist available for optional sync checks, but ignore build artifacts
 web/dist/*
 !web/dist/.keep
 !web_factor/dist/
