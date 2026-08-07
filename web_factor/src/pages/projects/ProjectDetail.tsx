@@ -16,6 +16,7 @@ import {
   Alert,
   App,
   Avatar,
+  Badge,
   Button,
   Card,
   Descriptions,
@@ -31,14 +32,13 @@ import {
   Select,
   Skeleton,
   Space,
-  Statistic,
   Switch,
   Tabs,
   Tag,
   Typography,
 } from 'antd';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
   deleteProject,
@@ -94,14 +94,6 @@ interface CustomProviderValues {
 }
 
 const qrPlatforms = new Set(['feishu', 'lark', 'weixin']);
-const permissionModes = [
-  { value: 'default', label: 'default' },
-  { value: 'acceptEdits', label: 'acceptEdits (edit)' },
-  { value: 'plan', label: 'plan' },
-  { value: 'bypassPermissions', label: 'bypassPermissions (yolo)' },
-  { value: 'dontAsk', label: 'dontAsk' },
-];
-
 const waitForService = (maxMilliseconds: number) => new Promise<void>((resolve) => {
   const start = Date.now();
   const poll = () => {
@@ -119,6 +111,7 @@ export default function ProjectDetail() {
   const { t } = useTranslation();
   const { name } = useParams<{ name: string }>();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { message, modal } = App.useApp();
   const [settingsForm] = Form.useForm<SettingsValues>();
   const [customProviderForm] = Form.useForm<CustomProviderValues>();
@@ -138,6 +131,9 @@ export default function ProjectDetail() {
   const [platformModalOpen, setPlatformModalOpen] = useState(false);
   const [platformType, setPlatformType] = useState('');
   const [restartModalOpen, setRestartModalOpen] = useState(false);
+  const selectedAgentType = Form.useWatch('agentType', settingsForm);
+  const requestedTab = searchParams.get('tab') || 'overview';
+  const activeTab = ['overview', 'providers', 'heartbeat', 'settings'].includes(requestedTab) ? requestedTab : 'overview';
 
   const fetchAll = useCallback(async () => {
     if (!name) return;
@@ -193,6 +189,15 @@ export default function ProjectDetail() {
     { key: 'weixin', label: 'WeChat', qr: true },
     ...Object.entries(platformMeta).map(([key, meta]) => ({ key, label: meta.label, qr: false })),
   ], []);
+  const permissionModes = useMemo(() => [
+    { value: 'default', label: t('projects.permissionDefault', 'Default') },
+    { value: 'acceptEdits', label: t('projects.permissionAcceptEdits', 'Accept edits') },
+    { value: 'edit', label: t('projects.permissionAcceptEdits', 'Accept edits') },
+    { value: 'plan', label: t('projects.permissionPlan', 'Plan') },
+    { value: 'bypassPermissions', label: t('projects.permissionBypass', 'Bypass permissions') },
+    { value: 'yolo', label: t('projects.permissionBypass', 'Bypass permissions') },
+    { value: 'dontAsk', label: t('projects.permissionDontAsk', "Don't ask") },
+  ], [t]);
 
   const unlinkedGlobalProviders = useMemo(() => {
     const agentType = project?.agent_type || '';
@@ -257,39 +262,41 @@ export default function ProjectDetail() {
   if (loading && !project) return <Card><Skeleton active /></Card>;
 
   const overview = project ? (
-    <Space orientation="vertical" size="large" style={{ width: '100%' }}>
-      <Card
-        className="cc-surface-card"
-        title={t('projects.platforms')}
-        extra={<Button type="primary" size="small" icon={<PlusOutlined />} onClick={() => {
-          setPlatformType('');
-          setPlatformModalOpen(true);
-        }}>{t('setup.addPlatform', 'Add platform')}</Button>}
-      >
-        <Flex wrap gap={8}>
-          {project.platforms?.map((platform) => (
-            <Tag key={platform.type} color={platform.connected ? 'green' : 'red'} icon={<RocketOutlined />}>
-              {platform.type} · {platform.connected ? 'connected' : 'offline'}
-            </Tag>
-          ))}
-        </Flex>
-      </Card>
-      <Card className="cc-surface-card" title={t('sessions.title')}>
+    <Card
+      className="cc-surface-card cc-project-overview"
+      title={t('projects.resourceSummary', 'Resource summary')}
+      extra={<Space wrap>
+        <Link to={`/sessions/${encodeURIComponent(name!)}`}><Button icon={<RocketOutlined />}>{t('projects.manageSessions', 'Manage sessions')}</Button></Link>
+        <Button type="primary" icon={<PlusOutlined />} onClick={() => { setPlatformType(''); setPlatformModalOpen(true); }}>{t('setup.addPlatform', 'Add platform')}</Button>
+      </Space>}
+    >
+      <Space orientation="vertical" size="large" style={{ width: '100%' }}>
         <Descriptions
           column={{ xs: 1, sm: 2 }}
           items={[
             { key: 'count', label: t('sessions.title'), children: project.sessions_count },
             { key: 'agent', label: t('projects.agentType', 'Agent type'), children: project.agent_type },
             { key: 'workdir', label: t('projects.workDir', 'Working directory'), children: <span className="cc-mono">{project.work_dir || '-'}</span> },
+            { key: 'heartbeat', label: t('heartbeat.title'), children: <Badge status={heartbeat?.paused ? 'warning' : heartbeat ? 'processing' : 'default'} text={heartbeat ? (heartbeat.paused ? t('heartbeat.paused') : t('heartbeat.running')) : t('heartbeat.notEnabledShort', 'Not enabled')} /> },
           ]}
         />
+        <div>
+          <Typography.Text strong>{t('projects.platforms')}</Typography.Text>
+          <Flex wrap gap={8} style={{ marginTop: 10 }}>
+            {project.platforms?.map((platform) => (
+              <Tag key={platform.type} color={platform.connected ? 'success' : 'error'} icon={<RocketOutlined />}>
+                {platform.type} · {platform.connected ? t('projects.connected', 'Connected') : t('projects.offline', 'Offline')}
+              </Tag>
+            ))}
+          </Flex>
+        </div>
         {project.active_session_keys?.length > 0 && (
-          <Flex wrap gap={6} style={{ marginTop: 16 }}>
+          <Flex wrap gap={6}>
             {project.active_session_keys.map((key) => <Tag key={key}>{key}</Tag>)}
           </Flex>
         )}
-      </Card>
-    </Space>
+      </Space>
+    </Card>
   ) : null;
 
   const providerContent = (
@@ -339,14 +346,16 @@ export default function ProjectDetail() {
   );
 
   const heartbeatContent = heartbeat ? (
-    <Space orientation="vertical" size="large" style={{ width: '100%' }}>
-      <div className="cc-page-grid">
-        <Card><Statistic title={t('heartbeat.status')} value={heartbeat.paused ? t('heartbeat.paused') : t('heartbeat.running')} prefix={<HeartOutlined />} /></Card>
-        <Card><Statistic title={t('heartbeat.interval')} value={heartbeat.interval_mins} suffix="min" /></Card>
-        <Card><Statistic title={t('heartbeat.runCount')} value={heartbeat.run_count} /></Card>
-        <Card><Statistic title={t('heartbeat.errorCount')} value={heartbeat.error_count} /></Card>
-      </div>
-      <Card className="cc-surface-card">
+      <Card
+        className="cc-surface-card cc-heartbeat-card"
+        title={<Space><Badge status={heartbeat.paused ? 'warning' : 'processing'} /><span>{heartbeat.paused ? t('heartbeat.paused') : t('heartbeat.running')}</span></Space>}
+        extra={<Typography.Text type="secondary">{t('heartbeat.everyMinutes', { count: heartbeat.interval_mins, defaultValue: 'Every {{count}} min' })}</Typography.Text>}
+      >
+        <div className="cc-heartbeat-metrics">
+          <span><Typography.Text strong>{t('heartbeat.runSummary', { count: heartbeat.run_count, defaultValue: '{{count}} runs' })}</Typography.Text><Typography.Text type="secondary">{t('heartbeat.runCount')}</Typography.Text></span>
+          <span><Typography.Text strong type={heartbeat.error_count ? 'danger' : undefined}>{heartbeat.error_count}</Typography.Text><Typography.Text type="secondary">{t('heartbeat.errorCount')}</Typography.Text></span>
+          <span><Typography.Text strong>{heartbeat.skipped_busy}</Typography.Text><Typography.Text type="secondary">{t('heartbeat.skippedBusy')}</Typography.Text></span>
+        </div>
         <Descriptions
           column={{ xs: 1, sm: 2 }}
           items={[
@@ -355,21 +364,16 @@ export default function ProjectDetail() {
             { key: 'error', label: t('heartbeat.lastError', 'Last error'), children: heartbeat.last_error || '-' },
           ]}
         />
+        <Flex className="cc-heartbeat-actions" wrap gap={8}>
+          <Popconfirm title={heartbeat.paused ? t('heartbeat.resumeConfirm', 'Resume heartbeat?') : t('heartbeat.pauseConfirm', 'Pause heartbeat?')} onConfirm={() => void (heartbeat.paused ? resumeHeartbeat(name!) : pauseHeartbeat(name!)).then(fetchAll)}>
+            <Button icon={heartbeat.paused ? <PlayCircleOutlined /> : <PauseCircleOutlined />}>{heartbeat.paused ? t('heartbeat.resume') : t('heartbeat.pause')}</Button>
+          </Popconfirm>
+          <Popconfirm title={t('heartbeat.triggerConfirm', 'Run heartbeat now?')} onConfirm={() => void triggerHeartbeat(name!).then(fetchAll)}>
+            <Button type="primary" icon={<HeartOutlined />}>{t('heartbeat.trigger')}</Button>
+          </Popconfirm>
+          <Button icon={<ClockCircleOutlined />} onClick={() => { setInterval(heartbeat.interval_mins); setIntervalModalOpen(true); }}>{t('heartbeat.setInterval')}</Button>
+        </Flex>
       </Card>
-      <Flex wrap gap={8}>
-        <Button
-          icon={heartbeat.paused ? <PlayCircleOutlined /> : <PauseCircleOutlined />}
-          onClick={() => void (heartbeat.paused ? resumeHeartbeat(name!) : pauseHeartbeat(name!)).then(fetchAll)}
-        >
-          {heartbeat.paused ? t('heartbeat.resume') : t('heartbeat.pause')}
-        </Button>
-        <Button icon={<HeartOutlined />} onClick={() => void triggerHeartbeat(name!).then(fetchAll)}>{t('heartbeat.trigger')}</Button>
-        <Button icon={<ClockCircleOutlined />} onClick={() => {
-          setInterval(heartbeat.interval_mins);
-          setIntervalModalOpen(true);
-        }}>{t('heartbeat.setInterval')}</Button>
-      </Flex>
-    </Space>
   ) : <Card className="cc-empty-card"><Empty description={t('heartbeat.notEnabled', 'Heartbeat is not configured for this project.')} /></Card>;
 
   const settingsContent = project ? (
@@ -380,7 +384,7 @@ export default function ProjectDetail() {
             <Form.Item name="agentType" label={t('projects.agentType', 'Agent type')}>
               <Select showSearch options={agentTypes.map((agent) => ({ label: agent, value: agent }))} />
             </Form.Item>
-            {settingsForm.getFieldValue('agentType') !== project.agent_type && (
+            {selectedAgentType && selectedAgentType !== project.agent_type && (
               <Alert type="warning" showIcon title={t('projects.agentTypeChangeHint', 'Changing agent type requires restart.')} style={{ marginBottom: 16 }} />
             )}
             <Form.Item name="workDir" label={t('projects.workDir', 'Working directory')}><Input /></Form.Item>
@@ -430,12 +434,16 @@ export default function ProjectDetail() {
   return (
     <div>
       <PageHeader
-        title={<Space><Link to="/projects"><Button type="text" icon={<ArrowLeftOutlined />} /></Link>{name}<Tag color="green">{project?.agent_type}</Tag></Space>}
+        title={<Space><Link to="/projects"><Button aria-label={t('common.back')} type="text" icon={<ArrowLeftOutlined />} /></Link>{name}<Tag>{project?.agent_type}</Tag></Space>}
         description={project?.work_dir || t('projects.subtitle', 'Project configuration')}
       />
       {error && <Alert type="error" showIcon title={error} style={{ marginBottom: 18 }} />}
 
       <Tabs
+        className="cc-project-tabs"
+        activeKey={activeTab}
+        onChange={(tab) => setSearchParams(tab === 'overview' ? {} : { tab })}
+        indicator={{ size: (origin) => Math.max(32, origin - 22), align: 'end' }}
         items={[
           { key: 'overview', label: t('projects.tabs.overview'), icon: <RocketOutlined />, children: overview },
           { key: 'providers', label: t('projects.tabs.providers'), icon: <ThunderboltOutlined />, children: providerContent },

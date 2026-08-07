@@ -96,7 +96,13 @@ export function useBridgeSocket({ bridgeCfg, platformName = 'web', sessionKey, p
           type: 'register',
           platform: platformName,
           capabilities: ['text', 'card', 'buttons', 'typing', 'update_message', 'preview', 'reconstruct_reply'],
-          metadata: { version: '1.0.0', description: 'Web Admin Dashboard' },
+          metadata: {
+            version: '1.0.0',
+            description: 'Web Admin Dashboard',
+            adapter: 'web-factor',
+            progress_style: 'card',
+            supports_progress_card_payload: true,
+          },
         }));
       };
 

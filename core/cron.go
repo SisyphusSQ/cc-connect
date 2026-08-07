@@ -346,6 +346,10 @@ func updateJobField(job *CronJob, field string, value any) error {
 			return nil
 		}
 	case "silent":
+		if value == nil {
+			job.Silent = nil
+			return nil
+		}
 		if v, ok := value.(bool); ok {
 			job.Silent = &v
 			return nil
@@ -366,6 +370,10 @@ func updateJobField(job *CronJob, field string, value any) error {
 			return nil
 		}
 	case "timeout_mins":
+		if value == nil {
+			job.TimeoutMins = nil
+			return nil
+		}
 		if v, ok := value.(float64); ok {
 			n := int(v)
 			job.TimeoutMins = &n
@@ -731,7 +739,6 @@ type mutePlatform struct {
 
 func (m *mutePlatform) Reply(_ context.Context, _ any, _ string) error { return nil }
 func (m *mutePlatform) Send(_ context.Context, _ any, _ string) error  { return nil }
-
 
 func GenerateCronID() string {
 	b := make([]byte, 4)

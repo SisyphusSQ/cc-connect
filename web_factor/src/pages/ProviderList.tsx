@@ -250,7 +250,7 @@ export default function ProviderList() {
                       <Card
                         key={preset.name}
                         className="cc-surface-card"
-                        title={<Space>{preset.featured && <StarFilled style={{ color: '#e8a317' }} />}{preset.display_name || preset.name}</Space>}
+                        title={<Space>{preset.featured && <StarFilled style={{ color: 'var(--cc-color-warning)' }} />}{preset.display_name || preset.name}</Space>}
                         extra={preset.invite_url && <Button type="link" href={preset.invite_url} target="_blank" icon={<ExportOutlined />}>{t('globalProviders.register')}</Button>}
                         actions={[
                           <Button key="add" type={added ? 'text' : 'primary'} disabled={added} onClick={() => openFromPreset(preset)}>

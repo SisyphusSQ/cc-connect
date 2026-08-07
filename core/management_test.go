@@ -1742,6 +1742,52 @@ func TestMgmt_CronPatch(t *testing.T) {
 	}
 }
 
+func TestMgmt_CronPatch_ClearsInheritedFieldsWithNull(t *testing.T) {
+	mgmt, ts, e := testManagementServer(t, "tok")
+	store, err := NewCronStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	cs := NewCronScheduler(store)
+	cs.RegisterEngine("test-project", e)
+	mgmt.SetCronScheduler(cs)
+
+	r := mgmtPost(t, ts.URL+"/api/v1/cron", "tok", map[string]any{
+		"project":      "test-project",
+		"session_key":  "test:chan:user",
+		"cron_expr":    "0 9 * * *",
+		"prompt":       "hello",
+		"silent":       true,
+		"timeout_mins": 60,
+	})
+	if !r.OK {
+		t.Fatalf("cron add failed: %s", r.Error)
+	}
+	var job CronJob
+	if err := json.Unmarshal(r.Data, &job); err != nil {
+		t.Fatal(err)
+	}
+
+	r = mgmtPatch(t, ts.URL+"/api/v1/cron/"+job.ID, "tok", map[string]any{
+		"silent":       nil,
+		"timeout_mins": nil,
+	})
+	if !r.OK {
+		t.Fatalf("cron patch failed: %s", r.Error)
+	}
+
+	var updated CronJob
+	if err := json.Unmarshal(r.Data, &updated); err != nil {
+		t.Fatal(err)
+	}
+	if updated.Silent != nil {
+		t.Fatalf("expected silent to inherit the global default, got %v", *updated.Silent)
+	}
+	if updated.TimeoutMins != nil {
+		t.Fatalf("expected timeout to use the default, got %d", *updated.TimeoutMins)
+	}
+}
+
 func TestMgmt_CronPatch_NonexistentJob(t *testing.T) {
 	mgmt, ts, e := testManagementServer(t, "tok")
 	store, err := NewCronStore(t.TempDir())

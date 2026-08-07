@@ -7,7 +7,7 @@ import zhCN from 'antd/es/locale/zh_CN';
 import zhTW from 'antd/es/locale/zh_TW';
 import { Flex, Spin } from 'antd';
 import { lazy, Suspense } from 'react';
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '@/store/auth';
 import { useThemeStore } from '@/store/theme';
@@ -20,8 +20,7 @@ const ProjectList = lazy(() => import('@factor/pages/projects/ProjectList'));
 const ProjectDetail = lazy(() => import('@factor/pages/projects/ProjectDetail'));
 const ProviderList = lazy(() => import('@factor/pages/ProviderList'));
 const SkillList = lazy(() => import('@factor/pages/SkillList'));
-const ChatList = lazy(() => import('@factor/pages/chat/ChatList'));
-const ChatView = lazy(() => import('@factor/pages/chat/ChatView'));
+const SessionWorkspace = lazy(() => import('@factor/pages/sessions/SessionWorkspace'));
 const CronList = lazy(() => import('@factor/pages/CronList'));
 const SystemConfig = lazy(() => import('@factor/pages/SystemConfig'));
 
@@ -32,6 +31,9 @@ export const factorRoutePaths = [
   '/projects/:name',
   '/providers',
   '/skills',
+  '/sessions',
+  '/sessions/:name',
+  '/sessions/:name/:sessionId',
   '/chat',
   '/chat/:name',
   '/cron',
@@ -50,6 +52,11 @@ const antdLocales: Record<string, typeof enUS> = {
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   return isAuthenticated ? children : <Navigate to="/login" replace />;
+}
+
+function LegacyChatRedirect() {
+  const { name } = useParams<{ name: string }>();
+  return <Navigate to={name ? `/sessions/${encodeURIComponent(name)}` : '/sessions'} replace />;
 }
 
 export default function App() {
@@ -72,8 +79,11 @@ export default function App() {
               <Route path="projects/:name" element={<ProjectDetail />} />
               <Route path="providers" element={<ProviderList />} />
               <Route path="skills" element={<SkillList />} />
-              <Route path="chat" element={<ChatList />} />
-              <Route path="chat/:name" element={<ChatView />} />
+              <Route path="sessions" element={<SessionWorkspace />} />
+              <Route path="sessions/:name" element={<SessionWorkspace />} />
+              <Route path="sessions/:name/:sessionId" element={<SessionWorkspace />} />
+              <Route path="chat" element={<Navigate to="/sessions" replace />} />
+              <Route path="chat/:name" element={<LegacyChatRedirect />} />
               <Route path="cron" element={<CronList />} />
               <Route path="system" element={<SystemConfig />} />
             </Route>

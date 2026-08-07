@@ -1,14 +1,16 @@
 import {
-  ArrowLeftOutlined,
+  BulbOutlined,
+  CheckCircleOutlined,
   CheckOutlined,
+  CloseCircleOutlined,
   CodeOutlined,
   CopyOutlined,
   FileOutlined,
-  MessageOutlined,
-  PlusOutlined,
+  LoadingOutlined,
   RobotOutlined,
   SendOutlined,
   ThunderboltOutlined,
+  ToolOutlined,
   UserOutlined,
 } from '@ant-design/icons';
 import {
@@ -17,13 +19,13 @@ import {
   Avatar,
   Button,
   Card,
+  Collapse,
   Divider,
   Drawer,
   Dropdown,
   Empty,
   Flex,
   Input,
-  List,
   Select,
   Skeleton,
   Space,
@@ -35,11 +37,12 @@ import {
 import type { MenuProps } from 'antd';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Markdown from 'react-markdown';
-import { Link, useParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import rehypeHighlight from 'rehype-highlight';
 import remarkGfm from 'remark-gfm';
-import { getSession, listSessions, type Session, type SessionDetail } from '@/api/sessions';
+import { getSession, listSessions, type SessionDetail } from '@/api/sessions';
+import { findDefaultSession, resolveChatSessionKey } from '../sessions/sessionModel';
 import {
   fetchBridgeConfig,
   useBridgeSocket,
@@ -48,8 +51,9 @@ import {
   type BridgeStatus,
 } from '@/hooks/useBridgeSocket';
 
-const { Text, Title } = Typography;
+const { Text } = Typography;
 const { TextArea } = Input;
+const progressPayloadPrefix = '__cc_connect_progress_card_v1__:';
 
 interface SlashCommand {
   cmd: string;
@@ -88,17 +92,38 @@ const slashCommands: SlashCommand[] = [
 const streamCommands = new Set(['/new', '/stop', '/switch', '/delete-mode', '/upgrade']);
 const knownCommands = new Set(slashCommands.map(({ cmd }) => cmd));
 
+type ProgressState = 'running' | 'completed' | 'failed';
+type ProgressKind = 'info' | 'thinking' | 'tool_use' | 'tool_result' | 'error';
+
+interface ProgressItem {
+  kind: ProgressKind;
+  text: string;
+  tool?: string;
+  status?: string;
+  exit_code?: number;
+  success?: boolean;
+}
+
+interface ProgressPayload {
+  agent?: string;
+  state: ProgressState;
+  items: ProgressItem[];
+  truncated?: boolean;
+}
+
 interface ChatMessage {
   id: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
-  format?: 'text' | 'markdown' | 'card' | 'buttons' | 'image' | 'file';
+  format?: 'text' | 'markdown' | 'card' | 'buttons' | 'image' | 'file' | 'progress';
   card?: Record<string, any>;
   buttons?: { text: string; data: string }[][];
   imageUrl?: string;
   fileName?: string;
   fileSize?: number;
   streaming?: boolean;
+  previewHandle?: string;
+  progress?: ProgressPayload;
   timestamp?: string;
 }
 
@@ -110,16 +135,6 @@ interface CommandResult {
   buttons?: { text: string; data: string }[][];
 }
 
-function timeAgo(iso: string) {
-  if (!iso) return '';
-  const minutes = Math.floor((Date.now() - new Date(iso).getTime()) / 60_000);
-  if (minutes < 1) return '<1m';
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h`;
-  return `${Math.floor(hours / 24)}d`;
-}
-
 function MarkdownContent({ content }: { content: string }) {
   return (
     <div className="cc-markdown">
@@ -127,6 +142,125 @@ function MarkdownContent({ content }: { content: string }) {
         {content}
       </Markdown>
     </div>
+  );
+}
+
+function redactProgressText(value: string) {
+  return value
+    .replace(/((?:api[_-]?key|token|password|secret)\s*[:=]\s*)([^\s,;]+)/gi, '$1[REDACTED]')
+    .slice(0, 2_000);
+}
+
+function parseProgressPayload(content: string): ProgressPayload | null {
+  if (!content.startsWith(progressPayloadPrefix)) return null;
+  try {
+    const value = JSON.parse(content.slice(progressPayloadPrefix.length)) as Partial<ProgressPayload> & { entries?: unknown };
+    const items: ProgressItem[] = [];
+    if (Array.isArray(value.items)) {
+      for (const candidate of value.items) {
+        if (!candidate || typeof candidate !== 'object') continue;
+        const item = candidate as Partial<ProgressItem>;
+        if (typeof item.text !== 'string' || !item.text.trim()) continue;
+        const allowedKinds: ProgressKind[] = ['info', 'thinking', 'tool_use', 'tool_result', 'error'];
+        items.push({
+          kind: allowedKinds.includes(item.kind as ProgressKind) ? item.kind as ProgressKind : 'info',
+          text: redactProgressText(item.text.trim()),
+          tool: typeof item.tool === 'string' ? item.tool.trim() : undefined,
+          status: typeof item.status === 'string' ? item.status.trim() : undefined,
+          exit_code: typeof item.exit_code === 'number' ? item.exit_code : undefined,
+          success: typeof item.success === 'boolean' ? item.success : undefined,
+        });
+      }
+    }
+    if (items.length === 0 && Array.isArray(value.entries)) {
+      for (const entry of value.entries) {
+        if (typeof entry === 'string' && entry.trim()) {
+          items.push({ kind: 'info', text: redactProgressText(entry.trim()) });
+        }
+      }
+    }
+    if (items.length === 0) return null;
+    const state: ProgressState = value.state === 'completed' || value.state === 'failed' ? value.state : 'running';
+    return {
+      agent: typeof value.agent === 'string' ? value.agent.trim() : undefined,
+      state,
+      items,
+      truncated: Boolean(value.truncated),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function ProgressContent({ progress }: { progress: ProgressPayload }) {
+  const { t } = useTranslation();
+  const [activeKeys, setActiveKeys] = useState<string[]>(progress.state === 'running' ? ['process'] : []);
+  const previousState = useRef(progress.state);
+
+  useEffect(() => {
+    if (progress.state === 'running') setActiveKeys(['process']);
+    else if (previousState.current === 'running') setActiveKeys([]);
+    previousState.current = progress.state;
+  }, [progress.state]);
+
+  const status = progress.state === 'running'
+    ? { icon: <LoadingOutlined spin />, color: 'processing', label: t('sessions.processRunning') }
+    : progress.state === 'failed'
+      ? { icon: <CloseCircleOutlined />, color: 'error', label: t('sessions.processFailed') }
+      : { icon: <CheckCircleOutlined />, color: 'success', label: t('sessions.processCompleted') };
+
+  return (
+    <Collapse
+      className="cc-progress-collapse"
+      ghost
+      size="small"
+      activeKey={activeKeys}
+      onChange={(keys) => setActiveKeys(Array.isArray(keys) ? keys.map(String) : [String(keys)])}
+      items={[{
+        key: 'process',
+        label: (
+          <Flex align="center" justify="space-between" gap={12} className="cc-progress-summary">
+            <Space size={8}>
+              <Text strong>{t('sessions.workProcess')}</Text>
+              {progress.agent && <Tag>{progress.agent}</Tag>}
+            </Space>
+            <Tag icon={status.icon} color={status.color} aria-live="polite">{status.label}</Tag>
+          </Flex>
+        ),
+        children: (
+          <div className="cc-progress-timeline">
+            {progress.truncated && <Alert type="info" showIcon title={t('sessions.processTruncated')} />}
+            {progress.items.map((item, index) => {
+              const thinking = item.kind === 'thinking';
+              const failed = item.kind === 'error' || item.success === false;
+              const label = thinking
+                ? t('sessions.thinkingSummary')
+                : item.kind === 'tool_use'
+                  ? t('sessions.toolCall')
+                  : item.kind === 'tool_result'
+                    ? t('sessions.toolResult')
+                    : t('sessions.processUpdate');
+              return (
+                <div key={`${item.kind}-${index}`} className={`cc-progress-item cc-progress-item-${item.kind}`}>
+                  <span className={`cc-progress-icon${failed ? ' cc-progress-icon-failed' : ''}`}>
+                    {thinking ? <BulbOutlined /> : failed ? <CloseCircleOutlined /> : <ToolOutlined />}
+                  </span>
+                  <div className="cc-progress-item-body">
+                    <Space size={6} wrap>
+                      <Text strong>{label}</Text>
+                      {item.tool && <Tag>{item.tool}</Tag>}
+                      {item.status && <Tag color={failed ? 'error' : 'default'}>{item.status}</Tag>}
+                      {typeof item.exit_code === 'number' && <Text type="secondary">exit {item.exit_code}</Text>}
+                    </Space>
+                    <div className="cc-progress-text">{item.text}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ),
+      }]}
+    />
   );
 }
 
@@ -182,6 +316,7 @@ function CardContent({ card, onAction }: { card?: Record<string, any>; onAction:
 
 function MessageContent({ message, onAction }: { message: ChatMessage; onAction: (value: string) => void }) {
   const { t } = useTranslation();
+  if (message.format === 'progress' && message.progress) return <ProgressContent progress={message.progress} />;
   if (message.format === 'card') return <CardContent card={message.card} onAction={onAction} />;
   if (message.format === 'buttons' && message.buttons) {
     return (
@@ -204,18 +339,15 @@ function MessageContent({ message, onAction }: { message: ChatMessage; onAction:
   return <MarkdownContent content={message.content} />;
 }
 
-function BridgeBadge({ status }: { status: BridgeStatus }) {
-  const { t } = useTranslation();
-  if (status === 'connected') return <Tag color="success">{t('sessions.bridgeConnected')}</Tag>;
-  if (status === 'connecting' || status === 'registering') return <Tag icon={<Spin size="small" />} color="processing">{t('sessions.bridgeConnecting')}</Tag>;
-  return <Tag>{t('sessions.bridgeDisconnected')}</Tag>;
+interface ChatViewProps {
+  newSessionRequest?: number;
+  onBridgeStatusChange?: (status: BridgeStatus) => void;
 }
 
-export default function ChatView() {
+export default function ChatView({ newSessionRequest = 0, onBridgeStatusChange }: ChatViewProps) {
   const { t } = useTranslation();
   const { message: toast } = App.useApp();
-  const { name: projectName } = useParams<{ name: string }>();
-  const [sessions, setSessions] = useState<Session[]>([]);
+  const { name: projectName, sessionId } = useParams<{ name: string; sessionId: string }>();
   const [currentSession, setCurrentSession] = useState<SessionDetail | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -224,10 +356,8 @@ export default function ChatView() {
   const [typing, setTyping] = useState(false);
   const [error, setError] = useState('');
   const [bridgeConfig, setBridgeConfig] = useState<BridgeConfig | null>(null);
-  const [userPickedSession, setUserPickedSession] = useState(false);
-  const [sessionsOpen, setSessionsOpen] = useState(false);
   const [commandResult, setCommandResult] = useState<CommandResult | null>(null);
-  const messagesEnd = useRef<HTMLDivElement>(null);
+  const messageList = useRef<HTMLDivElement>(null);
   const sessionKeyRef = useRef('');
   const previewCounter = useRef(0);
   const pendingCommand = useRef<string | null>(null);
@@ -235,7 +365,7 @@ export default function ChatView() {
   const previewAck = useRef<(refId: string, handle: string) => void>(() => undefined);
 
   const defaultSessionKey = projectName ? `bridge:web-admin:${projectName}` : '';
-  const sessionKey = userPickedSession && currentSession?.session_key ? currentSession.session_key : defaultSessionKey;
+  const sessionKey = resolveChatSessionKey(defaultSessionKey, currentSession);
   sessionKeyRef.current = sessionKey;
   commandPanel.current = commandResult?.command || null;
 
@@ -254,17 +384,21 @@ export default function ChatView() {
     if (!projectName) return;
     setLoading(true);
     setError('');
+    setCurrentSession(null);
+    setMessages([]);
     try {
-      const [{ sessions: projectSessions }, config] = await Promise.all([
-        listSessions(projectName),
+      const detailRequest = sessionId
+        ? getSession(projectName, sessionId, 200)
+        : listSessions(projectName).then(({ sessions }) => {
+          const defaultSession = findDefaultSession(sessions || [], defaultSessionKey);
+          return defaultSession ? getSession(projectName, defaultSession.id, 200) : null;
+        });
+      const [config, detail] = await Promise.all([
         fetchBridgeConfig(),
+        detailRequest,
       ]);
-      const sorted = [...(projectSessions || [])].sort((left, right) =>
-        (right.updated_at || right.created_at || '').localeCompare(left.updated_at || left.created_at || ''),
-      );
-      setSessions(sorted);
       setBridgeConfig(config);
-      if (sorted[0]) hydrateHistory(await getSession(projectName, sorted[0].id, 200));
+      if (detail) hydrateHistory(detail);
       else {
         setCurrentSession(null);
         setMessages([]);
@@ -274,23 +408,9 @@ export default function ChatView() {
     } finally {
       setLoading(false);
     }
-  }, [hydrateHistory, projectName]);
+  }, [defaultSessionKey, hydrateHistory, projectName, sessionId]);
 
   useEffect(() => { void refresh(); }, [refresh]);
-
-  const switchToSession = useCallback(async (session: Session) => {
-    if (!projectName) return;
-    setSessionsOpen(false);
-    setLoading(true);
-    setUserPickedSession(true);
-    try {
-      hydrateHistory(await getSession(projectName, session.id, 200));
-    } catch (reason) {
-      toast.error(reason instanceof Error ? reason.message : String(reason));
-    } finally {
-      setLoading(false);
-    }
-  }, [hydrateHistory, projectName, toast]);
 
   const handleBridgeMessage = useCallback((incoming: BridgeIncoming) => {
     const incomingSession = (incoming as any).session_key;
@@ -308,7 +428,7 @@ export default function ChatView() {
 
     if (incoming.type === 'reply') {
       setMessages((previous) => {
-        const index = previous.findIndex(({ streaming, role }) => streaming && role === 'assistant');
+        const index = previous.findIndex(({ streaming, role, format }) => streaming && role === 'assistant' && format !== 'progress');
         if (index < 0) return [...previous, { id: `reply-${Date.now()}`, role: 'assistant', content: incoming.content, format: incoming.format === 'markdown' ? 'markdown' : 'text' }];
         const next = [...previous];
         next[index] = { ...next[index], content: incoming.content, format: incoming.format === 'markdown' ? 'markdown' : 'text', streaming: false };
@@ -317,7 +437,7 @@ export default function ChatView() {
       setTyping(false);
     } else if (incoming.type === 'reply_stream') {
       setMessages((previous) => {
-        const index = previous.findIndex(({ streaming }) => streaming);
+        const index = previous.findIndex(({ streaming, format }) => streaming && format !== 'progress');
         if (index < 0) return [...previous, { id: `stream-${Date.now()}`, role: 'assistant', content: incoming.full_text, format: 'markdown', streaming: !incoming.done }];
         const next = [...previous];
         next[index] = { ...next[index], content: incoming.full_text, streaming: !incoming.done };
@@ -335,11 +455,27 @@ export default function ChatView() {
     else if (incoming.type === 'preview_start') {
       const handle = `web-factor-preview-${++previewCounter.current}`;
       previewAck.current(incoming.ref_id, handle);
-      setMessages((previous) => [...previous, { id: `preview-${handle}`, role: 'assistant', content: incoming.content, format: 'markdown', streaming: true }]);
+      const progress = parseProgressPayload(incoming.content);
+      setMessages((previous) => [...previous, {
+        id: `preview-${handle}`,
+        role: 'assistant',
+        content: progress ? '' : incoming.content,
+        format: progress ? 'progress' : 'markdown',
+        progress: progress || undefined,
+        previewHandle: handle,
+        streaming: progress ? progress.state === 'running' : true,
+      }]);
     } else if (incoming.type === 'update_message') {
-      setMessages((previous) => previous.map((entry) => entry.streaming ? { ...entry, content: incoming.content } : entry));
+      const progress = parseProgressPayload(incoming.content);
+      setMessages((previous) => previous.map((entry) => entry.previewHandle === incoming.preview_handle ? {
+        ...entry,
+        content: progress ? '' : incoming.content,
+        format: progress ? 'progress' : 'markdown',
+        progress: progress || undefined,
+        streaming: progress ? progress.state === 'running' : entry.streaming,
+      } : entry));
     } else if (incoming.type === 'delete_message') {
-      setMessages((previous) => previous.filter(({ streaming }) => !streaming));
+      setMessages((previous) => previous.filter(({ previewHandle }) => previewHandle !== incoming.preview_handle));
     } else if (incoming.type === 'image') {
       setMessages((previous) => [...previous, { id: `image-${Date.now()}`, role: 'assistant', content: '', format: 'image', imageUrl: (incoming as any).url }]);
     } else if (incoming.type === 'file') {
@@ -364,7 +500,12 @@ export default function ChatView() {
   previewAck.current = sendPreviewAck;
 
   useEffect(() => {
-    messagesEnd.current?.scrollIntoView({ behavior: 'smooth' });
+    onBridgeStatusChange?.(bridgeStatus);
+  }, [bridgeStatus, onBridgeStatusChange]);
+
+  useEffect(() => {
+    const container = messageList.current;
+    container?.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
   }, [messages, typing]);
 
   const send = useCallback((content: string) => {
@@ -387,11 +528,17 @@ export default function ChatView() {
 
   const newSession = useCallback(() => {
     if (bridgeStatus !== 'connected') return;
-    setUserPickedSession(false);
     setMessages((previous) => [...previous, { id: `user-${Date.now()}`, role: 'user', content: '/new' }]);
     sendMessage('/new');
-    setSessionsOpen(false);
   }, [bridgeStatus, sendMessage]);
+
+  const handledNewSessionRequest = useRef(0);
+  useEffect(() => {
+    if (newSessionRequest > 0 && newSessionRequest !== handledNewSessionRequest.current) {
+      handledNewSessionRequest.current = newSessionRequest;
+      newSession();
+    }
+  }, [newSession, newSessionRequest]);
 
   const commandItems = useMemo<MenuProps['items']>(() => {
     const groups: { key: SlashCommand['group']; labelKey: string }[] = [
@@ -415,30 +562,13 @@ export default function ChatView() {
     onClick: ({ key }) => send(key),
   };
 
-  if (loading && sessions.length === 0 && !currentSession) return <Card><Skeleton active /></Card>;
+  if (loading && !currentSession) return <Card><Skeleton active /></Card>;
 
   return (
     <div className="cc-chat-shell">
-      <Flex align="center" justify="space-between" gap={12} className="cc-chat-header">
-        <Flex align="center" gap={12}>
-          <Tooltip title={t('common.back', 'Back')}><Link to="/chat"><Button type="text" icon={<ArrowLeftOutlined />} /></Link></Tooltip>
-          <Avatar shape="square" size={42} icon={<MessageOutlined />} className="cc-platform-avatar" />
-          <div>
-            <Flex align="center" wrap gap={8}>
-              <Title level={4} style={{ margin: 0 }}>{projectName}</Title>
-              <BridgeBadge status={bridgeStatus} />
-            </Flex>
-            <Button type="link" size="small" onClick={() => setSessionsOpen(true)} style={{ padding: 0 }}>
-              {userPickedSession && currentSession ? currentSession.name || currentSession.id.slice(0, 8) : t('chat.defaultSession')}
-            </Button>
-          </div>
-        </Flex>
-        <Button icon={<PlusOutlined />} onClick={newSession} disabled={bridgeStatus !== 'connected'}>{t('cmd.new')}</Button>
-      </Flex>
-
       {error && <Alert type="error" showIcon closable title={error} style={{ marginTop: 12 }} />}
 
-      <div className="cc-message-list">
+      <div ref={messageList} className="cc-message-list">
         {messages.length === 0 && !loading && (
           <Empty
             image={<RobotOutlined className="cc-chat-empty-icon" />}
@@ -450,20 +580,25 @@ export default function ChatView() {
           return (
             <Flex key={entry.id} gap={10} align="flex-start" justify={user ? 'flex-end' : 'flex-start'}>
               {!user && <Avatar size={32} icon={entry.role === 'system' ? <ThunderboltOutlined /> : <RobotOutlined />} className="cc-message-avatar" />}
-              <div className={`cc-message cc-message-${entry.role}${entry.streaming ? ' cc-message-streaming' : ''}`}>
-                <MessageContent message={entry} onAction={handleAction} />
+              <div className={`cc-message-frame cc-message-frame-${entry.role}${entry.format === 'progress' ? ' cc-message-frame-progress' : ''}`}>
+                <div className={`cc-message cc-message-${entry.role}${entry.format === 'progress' ? ' cc-message-progress' : ''}${entry.streaming ? ' cc-message-streaming' : ''}`}>
+                  <MessageContent message={entry} onAction={handleAction} />
+                  {entry.streaming && entry.format !== 'progress' && <span className="cc-stream-cursor" />}
+                </div>
                 {!user && !entry.streaming && entry.content && (
-                  <Tooltip title={t('common.copy', 'Copy')}>
-                    <Button
-                      className="cc-message-copy"
-                      size="small"
-                      type="text"
-                      icon={<CopyOutlined />}
-                      onClick={() => void navigator.clipboard.writeText(entry.content).then(() => toast.success(t('common.copied', 'Copied')))}
-                    />
-                  </Tooltip>
+                  <div className="cc-message-actions">
+                    <Tooltip title={t('common.copy', 'Copy')}>
+                      <Button
+                        className="cc-message-copy"
+                        size="small"
+                        type="text"
+                        icon={<CopyOutlined />}
+                        aria-label={t('common.copy', 'Copy')}
+                        onClick={() => void navigator.clipboard.writeText(entry.content).then(() => toast.success(t('common.copied', 'Copied')))}
+                      />
+                    </Tooltip>
+                  </div>
                 )}
-                {entry.streaming && <span className="cc-stream-cursor" />}
               </div>
               {user && <Avatar size={32} icon={<UserOutlined />} />}
             </Flex>
@@ -472,7 +607,6 @@ export default function ChatView() {
         {typing && !messages.some(({ streaming }) => streaming) && (
           <Flex gap={10} align="center"><Avatar size={32} icon={<RobotOutlined />} className="cc-message-avatar" /><Card size="small"><Spin size="small" /> <Text type="secondary">{t('factor.typing')}</Text></Card></Flex>
         )}
-        <div ref={messagesEnd} />
       </div>
 
       <div className="cc-chat-composer">
@@ -504,28 +638,6 @@ export default function ChatView() {
           </Flex>
         )}
       </div>
-
-      <Drawer
-        title={t('chat.sessions')}
-        open={sessionsOpen}
-        onClose={() => setSessionsOpen(false)}
-        extra={<Button type="primary" size="small" icon={<PlusOutlined />} onClick={newSession}>{t('cmd.new')}</Button>}
-      >
-        {sessions.length === 0 ? <Empty description={t('sessions.noSessions')} /> : (
-          <List
-            dataSource={sessions}
-            renderItem={(session) => (
-              <List.Item className={session.id === currentSession?.id ? 'cc-session-active' : ''} onClick={() => void switchToSession(session)}>
-                <List.Item.Meta
-                  avatar={<Avatar icon={<MessageOutlined />} />}
-                  title={<Flex align="center" gap={6}><Text strong>{session.name || session.user_name || session.id.slice(0, 8)}</Text>{session.live && <Tag color="success">{t('factor.live')}</Tag>}</Flex>}
-                  description={<Space orientation="vertical" size={0}><Text type="secondary" ellipsis>{session.last_message?.content || t('common.noData')}</Text><Text type="secondary">{session.platform} · {t('factor.messageCount', { count: session.history_count })} · {timeAgo(session.updated_at || session.created_at)}</Text></Space>}
-                />
-              </List.Item>
-            )}
-          />
-        )}
-      </Drawer>
 
       <Drawer
         title={<Space><CheckOutlined /><Text code>{commandResult?.command}</Text></Space>}
