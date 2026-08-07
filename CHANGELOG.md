@@ -125,6 +125,17 @@ See `changelogs/v1.5.0-beta.1.md` for the full themed summary with credits.
 - **codex**: time out blocked app-server writes (#1448, @AaronZ345).
 - **slack**: suppress `NO_REPLY` marker on streaming-card silent replies (#1397, @spinsirr).
 
+## v1.4.1-1 (2026-08-07)
+
+Fork follow-up release based on upstream v1.4.1. The management binary now embeds the Factor frontend, while the upstream `web/` tree remains available for synchronization and shared contract sources.
+
+### Changed
+- **Web admin packaging**: release builds embed `web_factor/dist`; the legacy `web` Go embed package is no longer compiled.
+- **Build and CI**: default release and CI paths build only `web_factor`; upstream frontend checks remain available through the explicit `make web-upstream` and `make web-all` targets.
+
+### Distribution note
+- Automatic-update and npm distribution endpoints remain unchanged and continue to target the upstream project.
+
 ## v1.4.1 (2026-06-28)
 
 Patch release: Kimi CLI `--print` compatibility (#1461 fixing #1456). See `changelogs/v1.4.1.md`.
