@@ -10,11 +10,11 @@ export interface CronJob {
   work_dir: string;
   description: string;
   enabled: boolean;
-  silent: boolean;
+  silent?: boolean;
   mute: boolean;
   session_mode: string;
   mode: string;
-  timeout_mins: number | null;
+  timeout_mins?: number;
   created_at: string;
   last_run: string;
   last_error: string;

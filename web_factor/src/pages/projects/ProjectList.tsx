@@ -1,5 +1,4 @@
 import {
-  ApiOutlined,
   FolderOpenOutlined,
   HeartOutlined,
   MobileOutlined,
@@ -7,7 +6,7 @@ import {
   RightOutlined,
   SettingOutlined,
 } from '@ant-design/icons';
-import { Alert, Avatar, Button, Card, Empty, Flex, Form, Input, Modal, Select, Skeleton, Space, Tag, Typography } from 'antd';
+import { Alert, Avatar, Button, Card, Drawer, Empty, Flex, Form, Input, Select, Skeleton, Space, Steps, Tag, Typography } from 'antd';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -104,7 +103,7 @@ export default function ProjectList() {
                   <Avatar size={44} className="cc-platform-avatar" icon={<FolderOpenOutlined />} />
                   <Space orientation="vertical" size={3} style={{ minWidth: 0, flex: 1 }}>
                     <Typography.Text strong ellipsis>{project.name}</Typography.Text>
-                    <Tag color="green">{project.agent_type}</Tag>
+                    <Tag>{project.agent_type}</Tag>
                   </Space>
                   <RightOutlined />
                 </Flex>
@@ -122,14 +121,31 @@ export default function ProjectList() {
         </div>
       )}
 
-      <Modal
+      <Drawer
         open={wizardOpen}
         title={t('setup.addProject', 'Add project')}
-        footer={null}
-        width={640}
+        size={680}
         destroyOnHidden
-        onCancel={closeWizard}
+        onClose={closeWizard}
+        footer={(step === 'project' || step === 'platform') ? (
+          <Flex justify="space-between" gap={8}>
+            <Button onClick={step === 'project' ? closeWizard : () => setStep('project')}>
+              {step === 'project' ? t('common.cancel') : t('common.back')}
+            </Button>
+            {step === 'project' && <Button type="primary" onClick={() => form.submit()}>{t('setup.next', 'Next')}</Button>}
+          </Flex>
+        ) : null}
       >
+        <Steps
+          className="cc-project-wizard-steps"
+          size="small"
+          current={step === 'project' ? 0 : step === 'platform' ? 1 : 2}
+          items={[
+            { title: t('setup.projectInfo', 'Project info') },
+            { title: t('setup.platformStep', 'Platform') },
+            { title: t('setup.setupStep', 'Setup') },
+          ]}
+        />
         {step === 'project' && (
           <Form<ProjectDraft>
             form={form}
@@ -151,10 +167,6 @@ export default function ProjectList() {
             <Form.Item name="agentType" label={t('setup.agentType', 'Agent type')} rules={[{ required: true }]}>
               <Select showSearch options={agents.map((agent) => ({ label: agent, value: agent }))} />
             </Form.Item>
-            <Flex justify="flex-end" gap={8}>
-              <Button onClick={closeWizard}>{t('common.cancel')}</Button>
-              <Button type="primary" htmlType="submit">{t('setup.next', 'Next')}</Button>
-            </Flex>
           </Form>
         )}
 
@@ -182,7 +194,6 @@ export default function ProjectList() {
                 </Button>
               ))}
             </div>
-            <Button icon={<ApiOutlined />} onClick={() => setStep('project')}>{t('common.back')}</Button>
           </Space>
         )}
 
@@ -207,7 +218,7 @@ export default function ProjectList() {
             onCancel={() => setStep('platform')}
           />
         )}
-      </Modal>
+      </Drawer>
     </div>
   );
 }
