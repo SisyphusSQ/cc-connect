@@ -24,6 +24,7 @@ import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '@/store/auth';
 import { useThemeStore } from '@/store/theme';
 import { getStatus } from '@/api/status';
+import { AppHeaderContext, useAppHeaderContextValue, type AppHeaderState } from './AppHeaderContext';
 
 const { Header, Sider, Content, Footer } = Layout;
 const { useBreakpoint } = Grid;
@@ -47,8 +48,10 @@ export default function AppShell() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [version, setVersion] = useState('');
+  const [pageHeader, setPageHeader] = useState<AppHeaderState | null>(null);
   const logout = useAuthStore((state) => state.logout);
   const { theme: themeMode, setTheme } = useThemeStore();
+  const headerContext = useAppHeaderContextValue(setPageHeader);
 
   useEffect(() => {
     getStatus().then((status) => setVersion(status.version || '')).catch(() => undefined);
@@ -63,7 +66,7 @@ export default function AppShell() {
     { key: '/projects', icon: <FolderOpenOutlined />, label: t('nav.projects') },
     { key: '/providers', icon: <ApiOutlined />, label: t('nav.providers') },
     { key: '/skills', icon: <ToolOutlined />, label: t('nav.skills') },
-    { key: '/chat', icon: <MessageOutlined />, label: t('nav.chat') },
+    { key: '/sessions', icon: <MessageOutlined />, label: t('nav.sessions') },
     { key: '/cron', icon: <ClockCircleOutlined />, label: t('nav.cron') },
     { key: '/system', icon: <SettingOutlined />, label: t('nav.system') },
   ], [t]);
@@ -126,7 +129,8 @@ export default function AppShell() {
   };
 
   return (
-    <Layout className="cc-shell">
+    <AppHeaderContext.Provider value={headerContext}>
+    <Layout className={`cc-shell${pageHeader?.immersive ? ' cc-shell-immersive' : ''}`}>
       {!mobile && (
         <Sider
           className="cc-sider"
@@ -150,8 +154,8 @@ export default function AppShell() {
       </Drawer>
 
       <Layout className="cc-main-layout">
-        <Header className="cc-header">
-          <Space size={6}>
+        <Header className={`cc-header${pageHeader ? ' cc-header-contextual' : ''}`}>
+          <div className="cc-header-primary">
             {mobile && (
               <Button
                 type="text"
@@ -160,20 +164,34 @@ export default function AppShell() {
                 aria-label={t('factor.openNavigation')}
               />
             )}
-            <div className="cc-context-title">
-              <Typography.Text type="secondary">CC-Connect</Typography.Text>
-              <Typography.Title level={4}>{navItems.find((item) => item.key === selectedKey)?.label}</Typography.Title>
-            </div>
-          </Space>
-          <Space size={4}>
+            {pageHeader?.leading}
+            {pageHeader ? (
+              <>
+                <div className="cc-context-title cc-context-title-page">
+                  <Typography.Title level={4}>{pageHeader.title}</Typography.Title>
+                  {pageHeader.subtitle && <Typography.Text type="secondary">{pageHeader.subtitle}</Typography.Text>}
+                </div>
+                {pageHeader.details && <div className="cc-header-details">{pageHeader.details}</div>}
+              </>
+            ) : (
+              <div className="cc-context-title">
+                <Typography.Text type="secondary">CC-Connect</Typography.Text>
+                <Typography.Title level={4}>{navItems.find((item) => item.key === selectedKey)?.label}</Typography.Title>
+              </div>
+            )}
+          </div>
+          <div className="cc-header-tools">
+            {pageHeader?.actions && <div className="cc-header-actions">{pageHeader.actions}</div>}
+            {pageHeader?.actions && <span className="cc-header-divider" aria-hidden="true" />}
             <Tooltip title={t('common.refresh')}>
-              <Button type="text" icon={<ReloadOutlined spin={refreshing} />} onClick={handleRefresh} />
+              <Button type="text" icon={<ReloadOutlined spin={refreshing} />} onClick={handleRefresh} aria-label={t('common.refresh')} />
             </Tooltip>
             <Dropdown menu={languageMenu} placement="bottomRight" trigger={['click']}>
-              <Button type="text" icon={<GlobalOutlined />} aria-label={t('factor.language')} />
+              <Button className="cc-header-secondary-action" type="text" icon={<GlobalOutlined />} aria-label={t('factor.language')} />
             </Dropdown>
             <Tooltip title={themeMode}>
               <Button
+                className="cc-header-secondary-action"
                 type="text"
                 icon={themeMode === 'light' ? <SunOutlined /> : themeMode === 'dark' ? <MoonOutlined /> : <AppstoreOutlined />}
                 onClick={cycleTheme}
@@ -183,19 +201,20 @@ export default function AppShell() {
             <Tooltip title={t('login.logout')}>
               <Button type="text" danger icon={<LogoutOutlined />} onClick={logout} aria-label={t('login.logout')} />
             </Tooltip>
-          </Space>
+          </div>
         </Header>
 
-        <Content className="cc-content">
-          <div className="cc-content-inner">
+        <Content className={`cc-content${pageHeader?.immersive ? ' cc-content-immersive' : ''}`}>
+          <div className={`cc-content-inner${pageHeader?.immersive ? ' cc-content-inner-immersive' : ''}`}>
             <Outlet />
           </div>
-          <Footer className="cc-footer">
+          {!pageHeader?.immersive && <Footer className="cc-footer">
             <span>© {new Date().getFullYear()} CC-Connect Factor</span>
             {version && <span> · {version.startsWith('v') ? version : `v${version}`}</span>}
-          </Footer>
+          </Footer>}
         </Content>
       </Layout>
     </Layout>
+    </AppHeaderContext.Provider>
   );
 }
