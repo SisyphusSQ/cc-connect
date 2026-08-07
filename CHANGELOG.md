@@ -125,6 +125,16 @@ See `changelogs/v1.5.0-beta.1.md` for the full themed summary with credits.
 - **codex**: time out blocked app-server writes (#1448, @AaronZ345).
 - **slack**: suppress `NO_REPLY` marker on streaming-card silent replies (#1397, @spinsirr).
 
+## v1.4.1-2 (2026-08-07)
+
+Fork follow-up release based on the merged Web Factor session workspace and management UI updates.
+
+### Changed
+- **Session workspace**: add cross-project session browsing, filtering, session details, Bridge status, and responsive chat layout in the Web Factor frontend.
+- **Web admin pages**: refresh Cron, Dashboard, Provider, Skill, project, and chat interactions with matching frontend regression coverage.
+- **Cron defaults**: allow `silent: null` and `timeout_mins: null` in cron patches to clear per-job overrides and restore global defaults.
+- **Web bridge metadata**: advertise the Web Factor adapter and progress-card payload capability during registration.
+
 ## v1.4.1-1 (2026-08-07)
 
 Fork follow-up release based on upstream v1.4.1. The management binary now embeds the Factor frontend, while the upstream `web/` tree remains available for synchronization and shared contract sources.
