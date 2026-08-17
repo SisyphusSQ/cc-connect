@@ -1,5 +1,18 @@
 ﻿# Changelog
 
+## v1.5.0-0 (2026-08-17)
+
+Fork follow-up release based on upstream v1.5.0, carrying the Web Factor management frontend and local Feishu/Codex extensions.
+
+### Changed
+- **Upstream v1.5.0 integration**: add the upstream platform and agent adapters, stability fixes, configuration updates, and raw `web/` source tree.
+- **Web Factor**: port upstream platform metadata semantics, Cloud Web validation, Tuitui defaults, Russian management UI translations, and Ant Design `6.5.4`.
+- **Feishu and Codex**: retain topic activation/workspace isolation, quoted-file and image handling, service-tier switching, and local permission extensions.
+
+### Validation
+- Deterministic Core CUJ, config, Feishu, and Codex tests passed.
+- Factor tests (40/40), raw Web and Factor builds, `make web-all`, Go build/vet, and Ant Design lint passed.
+
 ## v1.5.0 (2026-08-16)
 
 First stable release of the v1.5.0 series since v1.4.1. Stabilizes beta.1 → beta.5 (~93 commits) including production P1 fixes (#1693 / #1686).
