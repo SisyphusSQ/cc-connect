@@ -1733,6 +1733,7 @@ func TestSendWithStatusFooter_NoFallbackOnNonMentionAt(t *testing.T) {
 			}
 		}
 	}
+}
 
 func TestNewPlatform_ThreadFollowupWithoutMentionIsOptIn(t *testing.T) {
 	tests := []struct {

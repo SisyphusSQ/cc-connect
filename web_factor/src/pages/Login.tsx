@@ -27,6 +27,7 @@ const languages = [
   { key: 'ja', label: '日本語' },
   { key: 'ko', label: '한국어' },
   { key: 'es', label: 'Español' },
+  { key: 'ru', label: 'Русский' },
 ];
 
 export default function Login() {

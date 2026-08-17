@@ -14,7 +14,7 @@ import { getGlobalSettings, updateGlobalSettings, type GlobalSettings } from '@/
 import { reloadConfig, restartSystem } from '@/api/status';
 import PageHeader from '@factor/components/PageHeader';
 
-const languages = ['en', 'zh', 'zh-TW', 'ja', 'ko', 'es'];
+const languages = ['en', 'zh', 'zh-TW', 'ja', 'ko', 'es', 'ru'];
 
 export default function SystemConfig() {
   const { t } = useTranslation();
