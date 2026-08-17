@@ -303,13 +303,13 @@ web_factor 同步基线：`2b69d2618e5084b78f375d81d037865c107fd4a4`
 兼容性处理：
 
 - 新增配置均沿用上游默认值；现有 v1.4.1 配置未发现需要手工迁移的字段删除。
-- `web_factor/upstream-sync.json` 已更新到 v1.5.0 / web tree，并记录最终使用的 AntD `6.5.4` 工作树版本。
+- `web_factor/upstream-sync.json` 已更新到 v1.5.0 / web tree，提交基线依赖为 AntD `6.5.3`；工作树原有的 AntD `6.5.4` WIP 未纳入本次同步提交。
 
 验证结果：
 
 - `pnpm --dir web_factor test`：40/40 通过；`pnpm --dir web_factor build`：通过。
 - `pnpm --dir web build`、`make web-all`：通过。
-- `antd lint web_factor/src --version 6.5.4 --format json`：0 个问题。
+- `antd lint web_factor/src --version 6.5.3 --format json`：0 个问题；按工作树原有 AntD `6.5.4` WIP 复跑 Factor 测试、构建和 lint：通过。
 - `go test ./core -run TestCUJ -count=1`、`go test ./config -count=1`、`go test ./platform/feishu -count=1`、`go test ./agent/codex -count=1`：通过。
 - `go vet ./core ./config ./platform/feishu ./agent/codex ./cmd/cc-connect`、`go build ./cmd/cc-connect`：通过。
 
