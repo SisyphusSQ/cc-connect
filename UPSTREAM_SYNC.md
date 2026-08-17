@@ -262,3 +262,59 @@ web_factor 同步基线：<web_factor/upstream-sync.json 中的上次基线>
 - 发布前重新核对最终 commit、配置示例、文档、构建产物和远端状态；
 - 未完成的迁移、验证或人工验收不得标记为同步完成。
 - 如果上游包含 `web/` 变化，必须同时写明 `web_factor` 的移植结论；不能只更新 `web/` 后关闭同步任务。
+
+## 11. v1.5.0 同步记录（2026-08-17）
+
+同步日期：2026-08-17
+上游远端：`upstream`
+上游稳定版本：`v1.5.0`
+上游 commit：`17c61062c2f9ce9bcdd45a2082e491f9743a2770`
+本地同步基线：`2b69d2618e5084b78f375d81d037865c107fd4a4`
+web tree：`e5923de5308659f4ac1a679854d7d419940e2cec`
+web_factor 同步基线：`2b69d2618e5084b78f375d81d037865c107fd4a4`
+
+采用上游实现：
+
+- 原样同步 `web/` v1.5.0；纳入 Tencent Yuanbao、Cloud Web、Google Chat、WPS Agentspace、Tuitui 平台和 Reasonix agent。
+- 纳入 Feishu 话题工作区隔离、引用文件按需下载、首条话题上下文、图片批处理，以及重启恢复、空闲关闭竞态、队列占位符等稳定性修复。
+- 纳入 Codex/Kimi/Pi/Claude/Antigravity 的上游适配、配置字段和俄语 Web 文案。
+
+重新移植的本地扩展：
+
+- 保留 Feishu 分场景权限、本地监听保护、显式 @ 激活与话题激活持久化，并与上游首条话题上下文 bootstrap 合并。
+- 保留 Codex 响应速度/服务等级切换、视频发送回执，以及 Factor 管理前端的本地页面体系。
+- Factor 侧补齐上游平台元数据的 `select`/`showWhen` 语义、Cloud Web 校验、Tuitui 默认值，以及俄语管理界面。
+
+保留的本地独有功能：
+
+- `web_factor/` Ant Design 管理界面及其与 `web/src` 共享契约的双轨同步方式。
+- 本地 Feishu 权限边界、Codex 体验扩展和发送回执能力。
+
+删除或废弃的本地功能：
+
+- 无。
+
+行为冲突与决策：
+
+- 以稳定 tag `v1.5.0` 为基线重放本地特性，不跟随上游 `main`；版本号、平台清单和带连字符平台的 build tag 在 `Makefile` 中统一到 v1.5.0 语义。
+- Feishu 话题免 @ 续聊仍需显式开启；首条激活消息必须真实 @ 机器人，避免普通群消息意外创建或切换话题会话。
+- Factor 不复制上游页面视觉实现，只移植共享契约和用户行为，页面继续使用本项目 Ant Design 体系。
+
+兼容性处理：
+
+- 新增配置均沿用上游默认值；现有 v1.4.1 配置未发现需要手工迁移的字段删除。
+- `web_factor/upstream-sync.json` 已更新到 v1.5.0 / web tree，并记录最终使用的 AntD `6.5.4` 工作树版本。
+
+验证结果：
+
+- `pnpm --dir web_factor test`：40/40 通过；`pnpm --dir web_factor build`：通过。
+- `pnpm --dir web build`、`make web-all`：通过。
+- `antd lint web_factor/src --version 6.5.4 --format json`：0 个问题。
+- `go test ./core -run TestCUJ -count=1`、`go test ./config -count=1`、`go test ./platform/feishu -count=1`、`go test ./agent/codex -count=1`：通过。
+- `go vet ./core ./config ./platform/feishu ./agent/codex ./cmd/cc-connect`、`go build ./cmd/cc-connect`：通过。
+
+剩余风险和后续事项：
+
+- 本次未执行真实 Feishu/IM、外部 Agent CLI、Provider 或回调链路 E2E；上述结果是本地 mock、确定性测试、静态检查和构建证据。
+- 新增 Google Chat、WPS Agentspace、Tuitui 等平台仍需在具备对应测试账号和回调环境后单独做人工验收。
+- Factor 登录、主题/语言、响应式导航及各管理页面未做本轮浏览器人工走查，后续可按第 8.5 节清单补做。
