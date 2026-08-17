@@ -46,6 +46,7 @@ describe('factor frontend contract', () => {
       ja: 'エージェント運用',
       es: 'Operaciones de agentes',
       ko: '에이전트 운영',
+      ru: 'Операции агентов',
     };
 
     for (const [language, copy] of Object.entries(expectations)) {
@@ -61,6 +62,7 @@ describe('factor frontend contract', () => {
       ja: ['セッション一覧', '実行中', 'Web セッションを開始'],
       es: ['Lista de sesiones', 'En ejecución', 'Iniciar sesión web'],
       ko: ['세션 목록', '실행 중', 'Web 세션 시작'],
+      ru: ['Список сессий', 'Выполняется', 'Начать Web-сессию'],
     };
 
     for (const [language, [list, running, start]] of Object.entries(expectations)) {
@@ -82,6 +84,7 @@ describe('factor frontend contract', () => {
       ja: ['スキルを検索', '詳細', 'ソースを表示'],
       es: ['Buscar habilidades', 'Detalles', 'Ver origen'],
       ko: ['스킬 검색', '상세', '소스 보기'],
+      ru: ['Поиск навыков', 'Подробности', 'Открыть источник'],
     };
 
     for (const [language, [search, details, source]] of Object.entries(expectations)) {
@@ -99,6 +102,7 @@ describe('factor frontend contract', () => {
       ja: ['スケジュールジョブを検索', 'このジョブを今すぐ実行しますか？', '平日 09:00'],
       es: ['Buscar tareas programadas', '¿Ejecutar esta tarea ahora?', 'Días laborables a las 09:00'],
       ko: ['예약 작업 검색', '이 작업을 지금 실행할까요?', '평일 09:00'],
+      ru: ['Поиск запланированных задач', 'Запустить эту задачу сейчас?', 'Каждый будний день в 09:00'],
     };
 
     for (const [language, [search, confirm, schedule]] of Object.entries(expectations)) {
@@ -109,7 +113,7 @@ describe('factor frontend contract', () => {
   });
 
   it('provides localized management workspace copy for every language', () => {
-    for (const language of ['en', 'zh', 'zh-TW', 'ja', 'es', 'ko']) {
+    for (const language of ['en', 'zh', 'zh-TW', 'ja', 'es', 'ko', 'ru']) {
       expect(i18n.getResource(language, 'translation', 'system.serviceOperations')).toBeTruthy();
       expect(i18n.getResource(language, 'translation', 'setup.projectInfo')).toBeTruthy();
       expect(i18n.getResource(language, 'translation', 'projects.permissionDefault')).toBeTruthy();

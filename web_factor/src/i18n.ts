@@ -4,6 +4,7 @@ import en from '@/i18n/locales/en.json';
 import es from '@/i18n/locales/es.json';
 import ja from '@/i18n/locales/ja.json';
 import ko from '@/i18n/locales/ko.json';
+import ru from '@/i18n/locales/ru.json';
 import zh from '@/i18n/locales/zh.json';
 import zhTW from '@/i18n/locales/zh-TW.json';
 
@@ -289,6 +290,41 @@ const factorTranslations: Record<string, Translation> = {
     system: { subtitle: '런타임 설정, 원본 구성, 서비스 제어를 관리합니다.', viewRawConfig: '원본 구성 보기', serviceOperations: '서비스 작업', serviceOperationsHint: '디스크에서 구성을 다시 불러오거나 실행 중인 서비스를 재시작합니다.', unsaved: '저장하지 않은 변경', upToDate: '설정이 최신 상태입니다' },
     setup: { projectInfo: '프로젝트 정보', platformStep: '플랫폼', setupStep: '설정' },
   },
+  ru: {
+    factor: {
+      brandSubtitle: 'Операции агентов', console: 'Консоль Factor', sessionCount: '{{count}} сессий',
+      messageCount: '{{count}} сообщений', active: 'активна', idle: 'простаивает', live: 'онлайн', enable: 'Включить',
+      disable: 'Отключить', global: 'глобальный', unsupportedMessage: 'Неподдерживаемое сообщение', typing: 'Агент отвечает…',
+      theme: 'Тема', language: 'Язык', openNavigation: 'Открыть навигацию', expandNavigation: 'Развернуть навигацию', collapseNavigation: 'Свернуть навигацию',
+    },
+    common: { copy: 'Копировать', copied: 'Скопировано', edit: 'Изменить', saved: 'Сохранено' },
+    chat: { selectProject: 'Выберите проект, чтобы открыть живой диалог с агентом.' },
+    skills: {
+      projectFilter: 'Выберите проект', searchPlaceholder: 'Поиск навыков', sourceFilter: 'Фильтр по источнику', allSources: 'Все источники',
+      skill: 'Навык', description: 'Описание', action: 'Действие', details: 'Подробности', skillDetails: 'Подробности навыка', copySource: 'Копировать источник',
+      filteredSkillCount: '{{count}} из {{total}} навыков', scanDirCount: 'Папки сканирования ({{count}})', noMatches: 'Совпадений нет', showTotal: '{{count}} навыков', viewSource: 'Открыть источник', loadFailed: 'Не удалось загрузить локальные навыки', presetsLoadFailed: 'Не удалось загрузить рекомендуемые навыки',
+    },
+    sessions: {
+      workspaceList: 'Список сессий', workspaceCount: '{{count}} сессий', searchPlaceholder: 'Поиск сессий',
+      projectFilter: 'Фильтр по проекту', allPlatforms: 'Все платформы', platformFilter: 'Фильтр по платформе',
+      statusFilter: 'Фильтр по статусу', allStatuses: 'Все статусы', running: 'Выполняется',
+      selectHint: 'Выберите сессию, чтобы продолжить', selectHintDetail: 'Сессии всех проектов доступны слева.',
+      startWebSession: 'Начать Web-сессию', newSession: 'Новая сессия', startOtherProject: 'Начать в другом проекте',
+      continue: 'Продолжить', chooseProjectHint: 'Выберите проект для Web-сессии.', chooseProject: 'Выберите проект',
+      workProcess: 'Процесс работы', thinkingSummary: 'Краткое содержание рассуждений', toolCall: 'Вызов инструмента', toolResult: 'Результат инструмента', processUpdate: 'Обновление процесса',
+      processRunning: 'Выполняется', processCompleted: 'Завершено', processFailed: 'Ошибка', processTruncated: 'Показаны только последние записи процесса.',
+    },
+    cron: {
+      searchPlaceholder: 'Поиск запланированных задач', runConfirm: 'Запустить эту задачу сейчас?', weekdays9: 'Каждый будний день в 09:00',
+    },
+    dashboard: { subtitle: 'Состояние системы, проекты и последние разговоры — на одном экране.' },
+    projects: {
+      subtitle: 'Управление агентами, платформами и поведением проектов.', showWorkdirIndicator: 'Индикатор рабочей папки',
+      showWorkdirIndicatorHint: 'Показывать рабочую папку в ответах агента', resourceSummary: 'Сводка ресурсов', manageSessions: 'Управление сессиями', connected: 'Подключено', offline: 'Офлайн', permissionDefault: 'По умолчанию', permissionAcceptEdits: 'Разрешить изменения', permissionPlan: 'План', permissionBypass: 'Обойти разрешения', permissionDontAsk: 'Не спрашивать',
+    },
+    system: { subtitle: 'Настройки выполнения, исходная конфигурация и управление сервисом.', viewRawConfig: 'Исходная конфигурация', serviceOperations: 'Операции сервиса', serviceOperationsHint: 'Перечитать конфигурацию с диска или перезапустить сервис.', unsaved: 'Есть несохранённые изменения', upToDate: 'Настройки актуальны' },
+    setup: { projectInfo: 'Данные проекта', platformStep: 'Платформа', setupStep: 'Настройка' },
+  },
 };
 
 function mergeTranslation(base: Translation, addition: Translation): Translation {
@@ -305,7 +341,7 @@ function mergeTranslation(base: Translation, addition: Translation): Translation
   return merged;
 }
 
-const baseTranslations: Record<string, Translation> = { en, zh, 'zh-TW': zhTW, ja, es, ko };
+const baseTranslations: Record<string, Translation> = { en, zh, 'zh-TW': zhTW, ja, es, ko, ru };
 const resources = Object.fromEntries(Object.entries(baseTranslations).map(([language, base]) => [
   language,
   { translation: mergeTranslation(base, factorTranslations[language]) },

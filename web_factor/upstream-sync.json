@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
   "sourceDirectory": "web",
-  "upstreamVersion": "v1.4.1",
-  "upstreamCommit": "5d4c96dd12774574369e75b60084140101c9a59a",
-  "sourceWebTree": "6a3723d964901bbaace2460d1940a0d00ec9adb0",
-  "factorSourceBaselineCommit": "d16d1510da845709940ae5243ad3ca36a196d381",
-  "factorSyncedWebTree": "6a3723d964901bbaace2460d1940a0d00ec9adb0",
-  "antdVersion": "6.5.3",
-  "syncedAt": "2026-08-03"
+  "upstreamVersion": "v1.5.0",
+  "upstreamCommit": "17c61062c2f9ce9bcdd45a2082e491f9743a2770",
+  "sourceWebTree": "e5923de5308659f4ac1a679854d7d419940e2cec",
+  "factorSourceBaselineCommit": "2b69d2618e5084b78f375d81d037865c107fd4a4",
+  "factorSyncedWebTree": "e5923de5308659f4ac1a679854d7d419940e2cec",
+  "antdVersion": "6.5.4",
+  "syncedAt": "2026-08-17"
 }

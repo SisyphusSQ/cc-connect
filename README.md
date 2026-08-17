@@ -47,15 +47,32 @@
 <details open>
 <summary>Sponsors</summary>
 
-[![MiniMax](assets/banners/minimax-en.png)](https://platform.minimax.io/subscribe/token-plan?code=lqYrKBvjke&source=link)
+[![Kimi](https://gcdn.moonshot.cn/growth-cdn/sponsor/kimi-en.png)](https://www.kimi.com/code/?aff=cc-connect)
 
-MiniMax-M3 pushes the frontier of coding and agentic AI, with a 1M-token context window powered by MiniMax Sparse Attention and natively multimodal capabilities from step zero. It leads across SWE-Bench Pro (59.0), Terminal Bench 2.1 (66.0), VIBE V2 (60.1), SVG-Bench (63.7), KernelBench Hard (28.8), BrowseComp (83.5), GDPval rubrics (74.7), Banker ToolBench (76.1), MCP Atlas (74.2), and OSWorld-verified (70.0). Build, learn, and ship with the MiniMax Token Plan.
+Thanks to [Kimi](https://www.kimi.com/code/?aff=cc-connect) for sponsoring this project! [Kimi K3](https://www.kimi.com/blog/kimi-k3) is Moonshot AI's most capable model and the world's first open 3T-class model. With 2.8 trillion parameters, native vision, and a 1-million-token context window, K3 delivers frontier performance across long-horizon coding, knowledge work, and reasoning.
 
-[Click here](https://platform.minimax.io/subscribe/token-plan?code=lqYrKBvjke&source=link) to get an exclusive 12% off the MiniMax Token Plan + voucher for cc-connect users!
+With cc-connect, you can bring Kimi CLI from your local machine into Feishu/Lark, DingTalk, Telegram, Slack, Discord, WeCom, and other instant messaging tools. Wherever you are, you can continue working on local projects through chat and ask Kimi to inspect or modify code, troubleshoot issues, run commands, and handle automation tasks.
+
+**cc-connect already supports Kimi CLI. Try the **[Kimi Code subscription](https://www.kimi.com/code/?aff=cc-connect)**, or use the API through the Kimi Open Platform ([中文站](https://platform.kimi.com?track_id=track-78c5d46574a54286a4ff42f7331272ba&aff=cc-connect) | [Global](https://platform.kimi.ai?track_id=track-dd37b0bea7a64b99b3fe2217b398e20b&aff=cc-connect)).
 
 ---
 
 <table>
+<tr>
+<td width="150"><a href="https://apinebula.com/UrO0q1"><img src="assets/sponsors/apinebula.png" alt="APINEBULA" width="120"></a></td>
+<td>Thanks to APINEBULA for sponsoring this project! APINEBULA, an enterprise-grade AI aggregation platform under Galaxy Video Bureau, leverages extensive platform resources to provide developers, teams, and enterprises with stable, cost-effective access to large language model APIs. The platform integrates leading, full-powered models like Claude, GPT, and Gemini—allowing you to connect to the world's top AI models through a single API, with prices starting as low as 10% of the original cost. Designed for AI programming, Agent development, and business system integration, APINEBULA supports enterprise-grade high concurrency, formal contracts, corporate bank transfers, and invoicing services. APINEBULA provides special discounts for our software users: register using <a href="https://apinebula.com/UrO0q1">this link</a> and enter the "ccconnect" promo code during first recharge to get 10% off.</td>
+</tr>
+
+<tr>
+<td width="150"><a href="https://s.qiniu.com/aUbueu"><img src="assets/sponsors/qiniu.png" alt="七牛云 Qiniu Cloud" width="120"></a></td>
+<td>Thanks to <a href="https://s.qiniu.com/aUbueu">Qiniu Cloud AI</a> for sponsoring this project! Qiniu Cloud (HK:02567) is an enterprise-grade LLM MaaS platform offering one-stop access to 150+ leading global models with full protocol compatibility across all major providers. It covers text, image, audio, video, and file processing across all modalities, serving over 1.69 million enterprise and developer users worldwide. Exclusive offer for cc-connect users: enterprise customers get 12 million free tokens, and refer friends to earn up to billions of tokens in bonus.</td>
+</tr>
+
+<tr>
+<td width="150"><a href="https://api.fenno.ai/register?redirect=/purchase?tab=subscription%26group=16&aff=C7KG6WBS7CQJ"><img src="assets/sponsors/fenno.png" alt="Fenno.ai" width="120"></a></td>
+<td>Thanks to Fenno.ai for sponsoring this project! Fenno.ai is a stable, efficient API relay service currently providing Codex relay with full OpenAI and Anthropic protocol compatibility. It flexibly integrates with mainstream coding tools like Codex, Claude Code, and OpenCode, reliably supporting enterprise-level demands of hundreds of billions of tokens per day. Fenno.ai supports domestic and overseas entity-to-entity settlement and invoicing. Exclusive offer for cc-connect users: subscribe via <a href="https://api.fenno.ai/register?redirect=/purchase?tab=subscription%26group=16&aff=C7KG6WBS7CQJ">this link</a> for an unbeatable Coding Plan at ¥9.9 / $150 credit, and earn up to 20% bonus for each friend you refer.</td>
+</tr>
+
 <tr>
 <td width="150"><a href="https://aigocode.com/invite/CYY3C85C"><img src="assets/sponsors/aigocode.png" alt="AIGoCode" width="120"></a></td>
 <td>Thanks to AIGoCode for sponsoring this project! AIGoCode is an all-in-one platform that integrates Claude Code, Codex, and the latest Gemini models, providing you with stable, efficient, and highly cost-effective AI coding services. The platform offers flexible subscription plans, zero risk of account suspension, direct access with no VPN required, and lightning-fast responses. AIGoCode has prepared a special benefit for cc-connect users: if you register via <a href="https://aigocode.com/invite/CYY3C85C">this link</a>, you'll receive an extra 10% bonus credit on your first top-up!</td>
@@ -78,6 +95,11 @@ MiniMax-M3 pushes the frontier of coding and agentic AI, with a 1M-token context
 </tr>
 
 <tr>
+<td width="150"><a href="https://visioncoder.cn"><img src="assets/sponsors/visioncoder.png" alt="VisionCoder" width="120"></a></td>
+<td>Thanks to VisionCoder for supporting this project. <a href="https://visioncoder.cn">VisionCoder Developer Platform</a> is a reliable and efficient API relay service provider, offering access to mainstream AI models such as Claude Code, Codex, and Gemini. It helps developers and teams integrate AI capabilities more easily and improve productivity. Additionally, VisionCoder now offers retail channels for <strong>Claude Max 200</strong> and <strong>GPT Pro 200</strong> <strong>premium accounts</strong>, providing users with instant access to top-tier AI computing power and features.</td>
+</tr>
+
+<tr>
 <td width="150"><a href="https://runapi.co/register?aff=4BXa"><img src="assets/sponsors/runapi.jpg" alt="RunAPI" width="120"></a></td>
 <td>Thanks to RunAPI for sponsoring this project! RunAPI is an efficient and stable API platform—an alternative to OpenRouter. A single API Key gives you access to 150+ leading models, including OpenAI, Claude, Gemini, DeepSeek, Grok, and more, at prices as low as 10% of the original (up to 90% off), with exceptional stability. It's seamlessly compatible with tools like Claude Code, OpenClaw, and others. RunAPI offers an exclusive perk for cc-connect users: register and contact an administrator to claim ¥7 in free credit.</td>
 </tr>
@@ -85,6 +107,16 @@ MiniMax-M3 pushes the frontier of coding and agentic AI, with a 1M-token context
 <tr>
 <td width="150"><a href="https://camel.kr777.top/register?aff=V2z8"><img src="assets/sponsors/camel_logo.png" alt="CaMeL" width="120"></a></td>
 <td>Thanks to CaMeL for sponsoring this project! In-depth cooperation with major research institutes and supercomputing centers, self-developed high-stability high-efficiency cache scheduling solution. Exclusive for cc-connect users: New registration authentication immediately receive $10 credit upon registration. Register via <a href="https://camel.kr777.top/register?aff=V2z8">this link</a>.</td>
+</tr>
+
+<tr>
+<td width="150"><a href="https://unity2.ai/register?source=ccconnect"><img src="assets/sponsors/unity2ai.png" alt="Unity2.ai" width="120"></a></td>
+<td>Thanks to Unity2.ai for sponsoring this project! Unity2.ai is a high-performance AI model API relay platform for individual developers, teams, and enterprises. Long-term service for top domestic enterprises, daily traffic exceeding 30 billion tokens, supporting up to 5000 RPM high concurrency. Offers balance billing, first-top-up bonus, combo subscriptions, enterprise invoicing, and dedicated integration. Register via <a href="https://unity2.ai/register?source=ccconnect">this link</a> to claim $2 credit, join the official group for an additional $10 credit — up to $12 in free credits!</td>
+</tr>
+
+<tr>
+<td width="150"><a href="https://ergouapi.com/r/gh-cc-connect"><img src="assets/sponsors/ergou.png" alt="二狗 API" width="120"></a></td>
+<td>Thanks to Ergou API (二狗 API) for sponsoring this project! Ergou API is an LLM API relay offering industry-low 0.1x-0.2x rates across the board, with 100% native endpoints for Claude, GPT, Gemini and other top-tier LLMs. Backed by premium IPLC routes plus dual residential ISP redundancy, Ergou API delivers stable, low-latency access nationwide. Developers and studios are welcome to <a href="https://ergouapi.com/r/gh-cc-connect">sign up</a>.</td>
 </tr>
 
 <tr>
@@ -123,11 +155,6 @@ MiniMax-M3 pushes the frontier of coding and agentic AI, with a 1M-token context
 <td>Thanks to DragonCode for supporting this project. DragonCode has prepared a special benefit for cc-connect users: register via <a href="https://dragoncode.codes/register?ref=23ZELCPX">this link</a> to get started.</td>
 </tr>
 
-<tr>
-<td width="150"><a href="https://coder.visioncoder.cn"><img src="assets/sponsors/visioncoder.png" alt="VisionCoder" width="120"></a></td>
-<td>Thanks to VisionCoder for supporting this project. <a href="https://coder.visioncoder.cn">VisionCoder Developer Platform</a> is a reliable and efficient API relay service provider, offering access to mainstream AI models such as Claude Code, Codex, and Gemini. It helps developers and teams integrate AI capabilities more easily and improve productivity. VisionCoder is also offering our users a limited-time <a href="https://coder.visioncoder.cn">Token Plan</a> promotion: buy 1 month and get 1 month free.</td>
-</tr>
-
 
 <tr>
 <td width="150"><a href="https://code0.ai/register?aff=5cGO"><img src="assets/sponsors/code0.svg" alt="Code0" width="120"></a></td>
@@ -161,28 +188,20 @@ MiniMax-M3 pushes the frontier of coding and agentic AI, with a 1M-token context
 </p>
 
 
-## 🆕 What's New in v1.4.0
+## 🆕 What's New in v1.5.0
 
-Stable release of the v1.4.0 series — **two new platforms join the family** (Cisco Webex, Matrix with E2EE), broader configurability across agents and platforms, Korean i18n, and a long list of fixes including three critical post-beta cherry-picks for a Send-goroutine race, a Feishu recall-probe quota burn, and a `run_as_user` EACCES regression.
+Stable release stabilizing v1.5.0-beta.1 → beta.5 (~93 commits since v1.4.1) — **five new platforms**, **Reasonix agent**, Feishu/Kimi/Pi hardening, and production P1 stability fixes.
 
-- 🚨 **Critical fixes shipped late** — Send-goroutine nil-pointer race that crashed the whole cc-connect process (#1436, @gotang); Feishu `MessageRecallDetector` burning ~1.3M OpenAPI calls/month per stuck session (#1321, @qvictl); `run_as_user` EACCES regression introduced by v1.3.4 (#1433, @chenhg5; reported by @vuyiv #1429).
-- **New platforms** — **Cisco Webex** first-class adapter (#1402, @bryantbarzola); **Matrix with E2EE** end-to-end-encrypted room support (#834). cc-connect now ships 15 chat platforms.
-- **Agent option parsing refactor** — unified `cmd` field across all agent adapters; `cli_path` is deprecated (still works with a warning) (#1297, @happyTonakai).
-- **Slack streaming + aggregated turn card** — live streaming preview while the agent is thinking, collapses into a single turn card on completion (#1333).
-- **Feishu rich card upgrades** — `after_click` card replacement for `cmd:` action handlers (#1299); batch images dispatched as one multi-image message (default coalesce window now 500 ms) so the first image of N is no longer dropped (#1408 carrying #1395).
-- **Codex per-config prompts + `model_catalog_json`** — `system_prompt` / `append_system_prompt` now honoured for the codex agent (#1345); Codex's own `model_catalog_json` is preferred as highest-priority model source (#1074, @happyTonakai).
-- **Zhipu GLM provider presets** — `z.ai` and `bigmodel` (CN) endpoint entries added (#1412, @clingnet).
-- **Korean (ko) i18n** — Web admin UI now ships Korean alongside zh / en / ja (#1343); `nav.cron` also localised for ko/ja/es.
-- **Claude Code plugins via `plugin_dir`** — load Claude Code plugins by pointing at a directory (#1325).
-- **Operational knobs** — `cc-connect send --cwd` workdir support (#1380, @MMMarcinho); `max_attachment_size_mb` for `cc-connect send` outbound size cap (#1392, @rablwupei); `CC_LOG_MAX_BACKUPS` env var for daemon log rotation (#1260); configurable `/history` truncation (#1291, @AaronZ345).
-- **acp graceful `/stop`** — new `AgentSessionCanceller` interface lets ACP agents stop cleanly (#1275).
-- **Reliability fixes** — workspace model persistence (#1372); core queued messages drain strictly FIFO (#1286); workspace binding + run_as_user fixes (#1315, #1316, #1433); claudecode mid-turn compaction keeps the turn alive (#1272); claudecode tool output reaches progress card via `EventToolResult` (#1407, @coolrockin); DingTalk stream loop panic recovery (#1390, reported by @gd0094); `/restart` notification queued and dispatched on platform ready (#1388 closing #1383); cron permission lookup with composite keys (#1067).
-- **Skill discovery hardened** — only depth-1 `SKILL.md` is registered; nested SKILL.md files are treated as assets, fixing 101 phantom slash-commands from `frontend-design` skill (#1317 carrying #1304).
-- **Windows cmdline hotfix on main** — v1.3.4's `--append-system-prompt-file` fix is now on main via #1378. Windows + claudecode users are unblocked here without needing the v1.3.4 hotfix branch.
+- **New platforms** — **Tencent Yuanbao** (#1445); **cloud_web** self-hosted IM gateway (#1282); **Google Chat** (#1424); **WPS Agentspace** (#1439); **Tuitui** (#849).
+- **New agent** — **Reasonix** HTTP serve API with default/yolo/plan permission modes (#1281).
+- **Feishu** — topic workspace isolation (#1551); quoted file on-demand download (#1588); first thread mention bootstrap (#1627); cross-type image batch flush (#1693).
+- **Kimi & Pi** — native Kimi Code CLI dialect (#1564); Pi v0.84.0 toolcall_end + willRetry (#1674, #1597); Pi RPC mode (#1440).
+- **Core stability** — `/restart` panic recovery; idle close race fixes; codex gpt-5.x in `/model` (#1546); Claude Code session title fallback (#1549); Weixin send budget (#1643).
+- **`agent_session_idle_timeout_mins`** — close idle agent processes while preserving session for resume (#1338).
 
-⚠️ **Upgrade notes**: `cli_path` is deprecated in favour of `cmd` (existing configs keep working). Feishu `imageBatchWindow` default changed from 150 ms → 500 ms. Feishu `MessageRecallDetector` fallback probe interval changed from 2 s → 60 s. Override in config if you preferred the old values.
+⚠️ **Upgrade notes**: No breaking changes. All new config options are optional with safe defaults. v1.4.1 configs upgrade as-is.
 
-Full themed summary with credits: `changelogs/v1.4.0.md`. Per-beta detail: `changelogs/v1.4.0-beta.1.md`, `v1.4.0-beta.2.md`, `v1.4.0-beta.3.md`. The v1.3.4 Windows hotfix is documented in `changelogs/v1.3.4.md`.
+Full summary: `changelogs/v1.5.0.md`.
 
 
 ## 🧩 Platform feature snapshot
@@ -255,6 +274,91 @@ High-level view of what each **built-in platform** can do in cc-connect.
   <em>Left：Lark &nbsp;|&nbsp; Telegram &nbsp;|&nbsp; Right：Wechat</em>
 </p>
 
+
+## 📋 Prerequisites
+
+> **Install in this exact order** — cc-connect is a bridge for local AI coding agents, so the agent CLI must be installed and authenticated *before* cc-connect starts. Skipping ahead will cause `cc-connect` to exit with `claudecode: claude CLI not found in PATH` (or similar for your chosen agent), and the Web UI on `:9820` will never come up.
+
+### 1️⃣ Install your AI Agent CLI
+
+Pick the agent you want to bridge. You need **at least one**.
+
+```bash
+# Claude Code (most common)
+brew install --cask claude-code            # macOS / Linux Homebrew
+# or
+npm install -g @anthropic-ai/claude-code   # any platform via npm
+
+# OpenAI Codex
+npm install -g @openai/codex
+
+# Google Gemini CLI
+npm install -g @google/gemini-cli
+
+# iFlow CLI
+npm install -g @iflow-ai/iflow-cli
+
+# Qoder CLI
+curl -fsSL https://qoder.com/install | bash
+```
+
+For **Cursor Agent** and **OpenCode**, follow the official install pages:
+- Cursor Agent: <https://docs.cursor.com/agent>
+- OpenCode: <https://github.com/opencode-ai/opencode>
+
+Verify the binary is on your `PATH`:
+
+```bash
+claude --version       # or: codex / gemini / opencode / qodercli / cursor-agent ...
+```
+
+### 2️⃣ Authenticate the agent
+
+Each agent has its own login flow — run the agent once interactively so it stores credentials in your home directory:
+
+```bash
+claude login           # opens a browser to authenticate
+# or
+codex login            # /gemini / opencode auth — see the agent's docs
+```
+
+If you skip this step, `cc-connect` will still start, but the agent will reject every prompt with an auth error.
+
+### 3️⃣ Install cc-connect
+
+```bash
+# npm (any platform)
+npm install -g cc-connect
+
+# Homebrew (macOS / Linux)
+brew install cc-connect
+
+# Or download a binary from https://github.com/chenhg5/cc-connect/releases
+```
+
+### 4️⃣ Start cc-connect and open the Web UI
+
+```bash
+cc-connect             # starts the service; first run auto-creates ~/.cc-connect/config.toml
+```
+
+On first launch, cc-connect prints something like:
+
+```
+Web admin:  http://localhost:9820
+```
+
+Open that URL in your browser. If `9820` is already in use, pass `--web-port 9821` or set `web_port` in `config.toml`.
+
+> **Note:** `cc-connect web` *only* opens the browser and the config UI — it does **not** start the service. You still need `cc-connect` running in another terminal.
+
+### 5️⃣ Configure platform bot tokens in the Web UI
+
+In the Web UI, create a project, then add at least one platform (Feishu / Telegram / Discord / Slack / DingTalk / WeChat Work / QQ / LINE / Weixin) and paste the bot token from that platform's developer console. Save and cc-connect will hot-reload.
+
+That's it — send a message to your bot and cc-connect will relay it to your local agent.
+
+---
 
 ## 🚀 Quick Start
 
@@ -381,6 +485,7 @@ cc-connect update --pre     # Include pre-releases
 | WPS Xiezuo | [docs/wps-xiezuo.md](docs/wps-xiezuo.md) | WebSocket | No |
 | Telegram | [docs/telegram.md](docs/telegram.md) | Long Polling | No |
 | Slack | [docs/slack.md](docs/slack.md) | Socket Mode | No |
+| Google Chat | [docs/googlechat.md](docs/googlechat.md) | Cloud Pub/Sub | No |
 | Discord | [docs/discord.md](docs/discord.md) | Gateway | No |
 | Weibo | [docs/weibo.md](docs/weibo.md) | WebSocket | No |
 | WeChat Work | [docs/wecom.md](docs/wecom.md) | WebSocket / Webhook | No (WS) / Yes (Webhook) |

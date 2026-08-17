@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -201,63 +202,43 @@ type providerWiringResult struct {
 	canStartInitialRefresh    bool
 }
 
-func main() {
-	checkUpdateAsync()
+var topLevelCommandHandlers = map[string]func([]string){
+	"config-example": func(_ []string) {
+		fmt.Print(ccconnect.ConfigExampleTOML)
+	},
+	"config": runConfig,
+	"update": func(_ []string) {
+		runUpdate()
+	},
+	"check-update": func(_ []string) {
+		checkUpdate()
+	},
+	"provider":  runProviderCommand,
+	"send":      runSend,
+	"cron":      runCron,
+	"timer":     runTimer,
+	"at":        runTimer,
+	"relay":     runRelay,
+	"sessions":  runSessions,
+	"agent-sid": runAgentSID,
+	"daemon":    runDaemon,
+	"feishu":    runFeishu,
+	"tuitui":    runTuiTui,
+	"weixin":    runWeixin,
+	"yuanbao":   runYuanbao,
+	"doctor":    runDoctor,
+	"web":       runWeb,
+}
 
-	// Handle subcommands before flag parsing
-	if len(os.Args) > 1 {
-		switch os.Args[1] {
-		case "config-example":
-			fmt.Print(ccconnect.ConfigExampleTOML)
-			return
-		case "config":
-			runConfig(os.Args[2:])
-			return
-		case "update":
-			runUpdate()
-			return
-		case "check-update":
-			checkUpdate()
-			return
-		case "provider":
-			runProviderCommand(os.Args[2:])
-			return
-		case "send":
-			runSend(os.Args[2:])
-			return
-		case "cron":
-			runCron(os.Args[2:])
-			return
-		case "timer", "at":
-			runTimer(os.Args[2:])
-			return
-		case "relay":
-			runRelay(os.Args[2:])
-			return
-		case "sessions":
-			runSessions(os.Args[2:])
-			return
-		case "agent-sid":
-			runAgentSID(os.Args[2:])
-			return
-		case "daemon":
-			runDaemon(os.Args[2:])
-			return
-		case "feishu":
-			runFeishu(os.Args[2:])
-			return
-		case "weixin":
-			runWeixin(os.Args[2:])
-			return
-		case "doctor":
-			runDoctor(os.Args[2:])
-			return
-		case "web":
-			runWeb(os.Args[2:])
-			return
-		}
+func main() {
+	// Agy hooks require stdout to contain only the final JSON decision. Handle
+	// this internal command before update checks, logging, or normal CLI setup.
+	if len(os.Args) > 1 && os.Args[1] == "_agy-permission-hook" {
+		runAntigravityPermissionHook()
+		return
 	}
 
+	checkUpdateAsync()
 	// When started as a daemon (CC_LOG_FILE set), redirect logs to a rotating file.
 	// Log file setup happens before flag.Parse() so the rotating writer is in
 	// place before any slog output. To still honour --log-max-size, we
@@ -279,33 +260,39 @@ func main() {
 		slog.SetDefault(slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{Level: slog.LevelInfo})))
 	}
 
-	configFlag := flag.String("config", "", "path to config file (default: ./config.toml or ~/.cc-connect/config.toml)")
-	showVersion := flag.Bool("version", false, "print version and exit")
-	observeFlag := flag.Bool("observe", false, "observe native terminal Claude Code sessions and forward to Slack")
-	observeChannel := flag.String("observe-channel", "", "Slack channel ID to forward terminal observations to (requires --observe)")
-	forceFlag := flag.Bool("force", false, "kill any existing instance with the same config before starting")
-	logMaxSizeFlag := flag.String("log-max-size", "", "max bytes for the rotating log file (e.g. 10MB, 512K, 10485760); overrides CC_LOG_MAX_SIZE env var (default: 10MB)")
-	logMaxBackupsFlag := flag.Int("log-max-backups", 0, "number of rotated log files to retain (.log.1 .. .log.N); overrides CC_LOG_MAX_BACKUPS env var (default: 3)")
-	flag.Usage = printUsage
-	flag.Parse()
+	rootOpts, err := parseRootCLIOptions(os.Args[1:])
+	if err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return
+		}
+		os.Exit(2)
+	}
 
 	// Cross-check: the rotating-writer setup above consumed a pre-scanned
-	// value of --log-max-size, but flag.Parse() may have been called for
-	// tests or wrappers that pre-scan differently. Validate the parsed flag
-	// value here so the binding is exercised and a typo caught by
-	// flag.Parse() surfaces a clear error.
-	if strings.TrimSpace(*logMaxSizeFlag) != "" {
-		if _, err := daemon.ParseLogSize(*logMaxSizeFlag); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: --log-max-size=%q: %v\n", *logMaxSizeFlag, err)
+	// value of --log-max-size. Validate the parsed value too so malformed
+	// values surface a clear warning.
+	if strings.TrimSpace(rootOpts.logMaxSize) != "" {
+		if _, err := daemon.ParseLogSize(rootOpts.logMaxSize); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: --log-max-size=%q: %v\n", rootOpts.logMaxSize, err)
 		}
 	}
-	if *logMaxBackupsFlag < 0 {
-		fmt.Fprintf(os.Stderr, "warning: --log-max-backups=%d must be >= 0 (0 means use env/default)\n", *logMaxBackupsFlag)
+	if rootOpts.logMaxBackups < 0 {
+		fmt.Fprintf(os.Stderr, "warning: --log-max-backups=%d must be >= 0 (0 means use env/default)\n", rootOpts.logMaxBackups)
 	}
 
-	if *showVersion {
+	if rootOpts.showVersion {
 		fmt.Printf("cc-connect %s\ncommit:  %s\nbuilt:   %s\n", version, commit, buildTime)
 		return
+	}
+
+	if runTopLevelCommand(rootOpts.args) {
+		return
+	}
+
+	if err := validateNoExtraTopLevelArgs(rootOpts.args); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n\n", err)
+		printUsage()
+		os.Exit(1)
 	}
 
 	core.VersionInfo = fmt.Sprintf("cc-connect %s\ncommit: %s\nbuilt: %s", version, commit, buildTime)
@@ -313,10 +300,10 @@ func main() {
 	core.CurrentCommit = commit
 	core.CurrentBuildTime = buildTime
 
-	configPath := resolveConfigPath(*configFlag)
+	configPath := resolveConfigPath(rootOpts.configPath)
 
 	// Handle --force: kill any existing instance before we try to acquire the lock
-	if *forceFlag {
+	if rootOpts.force {
 		if KillExistingInstance(configPath) {
 			slog.Info("killed existing instance via --force")
 		}
@@ -434,7 +421,7 @@ func main() {
 		engine := core.NewEngine(proj.Name, agent, platforms, sessionFile, lang)
 		// Wire display settings including show_context_indicator and reply_footer
 		// Global [display] config can be overridden by project-level settings
-		_, _, _, _, _, showCtx, showFooter := config.EffectiveDisplay(cfg, &proj)
+		_, _, _, _, _, showCtx, showFooter, _ := config.EffectiveDisplay(cfg, &proj)
 		engine.SetShowContextIndicator(showCtx)
 		showWorkdir := true
 		if proj.ShowWorkdirIndicator != nil {
@@ -485,8 +472,8 @@ func main() {
 		}
 
 		// Wire terminal observation (--observe / [projects.observe])
-		observeEnabled := *observeFlag
-		obsChan := *observeChannel
+		observeEnabled := rootOpts.observe
+		obsChan := rootOpts.observeChannel
 		if proj.Observe != nil {
 			if !observeEnabled && proj.Observe.Enabled {
 				observeEnabled = true
@@ -564,7 +551,7 @@ func main() {
 
 		// Wire display truncation settings (includes legacy quiet → display mapping)
 		{
-			mode, tm, tool, tmlen, toollen, _, _ := config.EffectiveDisplay(cfg, &proj)
+			mode, tm, tool, tmlen, toollen, _, _, hideAgentFooter := config.EffectiveDisplay(cfg, &proj)
 			historyMaxLen := config.EffectiveHistoryMaxLen(cfg, &proj)
 			engine.SetDisplayConfig(core.DisplayCfg{
 				Mode:             mode,
@@ -574,6 +561,7 @@ func main() {
 				ToolMaxLen:       toollen,
 				ToolMessages:     tool,
 				HistoryMaxLen:    &historyMaxLen,
+				HideAgentFooter:  hideAgentFooter,
 			})
 		}
 
@@ -721,6 +709,14 @@ func main() {
 		if defaulted {
 			slog.Info("project: reset_on_idle_mins not set, applying default — set reset_on_idle_mins = 0 to opt out, see docs/usage.md",
 				"project", proj.Name, "default_minutes", defaultResetOnIdleMins)
+		}
+		if proj.AgentSessionIdleTimeoutMins != nil {
+			mins := *proj.AgentSessionIdleTimeoutMins
+			if mins <= 0 {
+				engine.SetAgentSessionIdleTimeout(0)
+			} else {
+				engine.SetAgentSessionIdleTimeout(time.Duration(mins) * time.Minute)
+			}
 		}
 
 		// Wire sender injection
@@ -1387,6 +1383,65 @@ func main() {
 	slog.Info("bye")
 }
 
+func runTopLevelCommand(args []string) bool {
+	if len(args) == 0 {
+		return false
+	}
+	handler, ok := topLevelCommandHandlers[args[0]]
+	if !ok {
+		return false
+	}
+	handler(args[1:])
+	return true
+}
+
+type rootCLIOptions struct {
+	configPath     string
+	force          bool
+	observe        bool
+	observeChannel string
+	logMaxSize     string
+	logMaxBackups  int
+	showVersion    bool
+	args           []string
+}
+
+func parseRootCLIOptions(args []string) (rootCLIOptions, error) {
+	fs := flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	fs.Usage = printUsage
+
+	configPath := fs.String("config", "", "path to config file (default: ./config.toml or ~/.cc-connect/config.toml)")
+	force := fs.Bool("force", false, "kill any existing instance with the same config before starting")
+	observe := fs.Bool("observe", false, "observe native terminal Claude Code sessions and forward to Slack")
+	observeChannel := fs.String("observe-channel", "", "Slack channel ID to forward terminal observations to (requires --observe)")
+	logMaxSize := fs.String("log-max-size", "", "max bytes for the rotating log file (e.g. 10MB, 512K, 10485760); overrides CC_LOG_MAX_SIZE env var (default: 10MB)")
+	logMaxBackups := fs.Int("log-max-backups", 0, "number of rotated log files to retain (.log.1 .. .log.N); overrides CC_LOG_MAX_BACKUPS env var (default: 3)")
+	showVersion := fs.Bool("version", false, "print version and exit")
+
+	if err := fs.Parse(args); err != nil {
+		return rootCLIOptions{}, err
+	}
+
+	return rootCLIOptions{
+		configPath:     *configPath,
+		force:          *force,
+		observe:        *observe,
+		observeChannel: *observeChannel,
+		logMaxSize:     *logMaxSize,
+		logMaxBackups:  *logMaxBackups,
+		showVersion:    *showVersion,
+		args:           fs.Args(),
+	}, nil
+}
+
+func validateNoExtraTopLevelArgs(args []string) error {
+	if len(args) == 0 {
+		return nil
+	}
+	return fmt.Errorf("unknown top-level command: %s", args[0])
+}
+
 // sessionStorePath builds a unique filename from project name + work_dir.
 // It checks for legacy session files (without the sessions/ subdirectory) in dataDir
 // for backward compatibility; if found, uses that path. Otherwise uses dataDir/sessions/.
@@ -1557,7 +1612,7 @@ func printUsage() {
 
   Bridge your messaging platforms to local AI coding agents.
   Supports: Claude Code, Codex, Cursor, Gemini CLI, Qoder CLI, OpenCode
-  Platforms: Feishu, Telegram, Slack, DingTalk, Discord, LINE, WeChat Work, Weixin, QQ, QQ Bot
+  Platforms: Feishu, TuiTui, Telegram, Slack, DingTalk, Discord, LINE, WeChat Work, Weixin, QQ, QQ Bot
 
   GitHub:  https://github.com/chenhg5/cc-connect
   Docs:    https://github.com/chenhg5/cc-connect/blob/main/INSTALL.md
@@ -1611,6 +1666,12 @@ Commands:
     new              Force QR onboarding to create a new bot
     bind             Bind existing app_id/app_secret
 
+  tuitui             Access TuiTui history, posts, and attachments
+    messages         Read chat history
+    search           Search chat history
+    post             Post a channel message
+    download         Download a message attachment
+
   weixin             Setup Weixin personal (ilink) via QR or token
     setup            QR login, or bind when --token is provided
     new              Force QR login
@@ -1634,6 +1695,7 @@ Examples:
   cc-connect cron list                List all scheduled tasks
   cc-connect feishu setup             Setup Feishu/Lark bot credentials
   cc-connect weixin setup             Setup Weixin (ilink) with QR or --token
+  cc-connect yuanbao setup            Setup Yuanbao bot with --token app_key:app_secret
   cc-connect update                   Update to the latest version
   cc-connect config format            Format the config file
   cc-connect config example > c.toml  Save example config to a file
@@ -1689,7 +1751,7 @@ func reloadConfig(configPath, projName string, engine *core.Engine) (*core.Confi
 	}
 
 	// Reload display config (includes legacy quiet → display mapping)
-	mode, tm, tool, tmlen, toollen, showCtx, showFooter := config.EffectiveDisplay(cfg, proj)
+	mode, tm, tool, tmlen, toollen, showCtx, showFooter, hideAgentFooter := config.EffectiveDisplay(cfg, proj)
 	historyMaxLen := config.EffectiveHistoryMaxLen(cfg, proj)
 	engine.SetDisplayConfig(core.DisplayCfg{
 		Mode:             mode,
@@ -1699,6 +1761,7 @@ func reloadConfig(configPath, projName string, engine *core.Engine) (*core.Confi
 		ToolMaxLen:       toollen,
 		ToolMessages:     tool,
 		HistoryMaxLen:    &historyMaxLen,
+		HideAgentFooter:  hideAgentFooter,
 	})
 	result.DisplayUpdated = true
 
@@ -1730,6 +1793,18 @@ func reloadConfig(configPath, projName string, engine *core.Engine) (*core.Confi
 	if defaulted {
 		slog.Info("project: reset_on_idle_mins not set, applying default — set reset_on_idle_mins = 0 to opt out, see docs/usage.md",
 			"project", proj.Name, "default_minutes", defaultResetOnIdleMins)
+	}
+	if proj.AgentSessionIdleTimeoutMins != nil {
+		mins := *proj.AgentSessionIdleTimeoutMins
+		if mins <= 0 {
+			engine.SetAgentSessionIdleTimeout(0)
+		} else {
+			engine.SetAgentSessionIdleTimeout(time.Duration(mins) * time.Minute)
+		}
+	} else {
+		// A reload may remove this option after timers were scheduled; reset
+		// explicitly so those stale idle-close timers cannot fire later.
+		engine.SetAgentSessionIdleTimeout(0)
 	}
 
 	// Reload instant reply

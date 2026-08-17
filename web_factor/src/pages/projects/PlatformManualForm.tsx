@@ -1,8 +1,9 @@
 import { CaretDownOutlined, CaretUpOutlined, LeftOutlined, PlusOutlined } from '@ant-design/icons';
-import { Alert, Button, Form, Input, InputNumber, Space, Switch, Typography } from 'antd';
-import { useState } from 'react';
+import { Alert, Button, Form, Input, InputNumber, Select, Space, Switch, Typography } from 'antd';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { addPlatformToProject } from '@/api/projects';
+import { validateCloudWebForm } from '@/lib/cloudWebFormValidation';
 import { platformMeta, type FieldDef } from '@/lib/platformMeta';
 
 interface PlatformManualFormProps {
@@ -24,23 +25,56 @@ export default function PlatformManualForm({
 }: PlatformManualFormProps) {
   const { t } = useTranslation();
   const meta = platformMeta[platformType];
+  const [form] = Form.useForm<Record<string, unknown>>();
+  const initialValues = useMemo<Record<string, unknown>>(() => {
+    if (platformType === 'cloud_web') return { transport: 'websocket' };
+    if (platformType === 'tuitui') return { group_policy: 'allowlist', require_mention: true, history_limit: 50 };
+    return {};
+  }, [platformType]);
+  const [formValues, setFormValues] = useState<Record<string, unknown>>(initialValues);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    setFormValues(initialValues);
+  }, [initialValues]);
 
   if (!meta) {
     return <Alert type="warning" showIcon title={t('setup.unsupportedPlatform', { type: platformType })} />;
   }
 
-  const basicFields = meta.fields.filter((field) => field.group !== 'advanced');
-  const advancedFields = meta.fields.filter((field) => field.group === 'advanced');
+  const currentValues = { ...initialValues, ...formValues };
+  const fieldVisible = (field: FieldDef) => {
+    if (!field.showWhen) return true;
+    return Object.entries(field.showWhen).every(([dependency, allowed]) => allowed.includes(String(currentValues[dependency] ?? '')));
+  };
+  const visibleFields = (fields: FieldDef[]) => fields.filter(fieldVisible);
+  const basicFields = visibleFields(meta.fields.filter((field) => field.group !== 'advanced'));
+  const advancedFields = visibleFields(meta.fields.filter((field) => field.group === 'advanced'));
 
   const handleFinish = async (values: Record<string, unknown>) => {
+    const missing = meta.fields.filter((field) => fieldVisible(field) && field.required && !values[field.key]);
+    if (missing.length > 0) {
+      setError(`${missing.map((field) => t(field.labelKey)).join(', ')} required`);
+      return;
+    }
+    if (platformType === 'cloud_web') {
+      const issue = validateCloudWebForm(values);
+      if (issue) {
+        const field = issue.fieldLabelKey ? t(issue.fieldLabelKey) : undefined;
+        setError(t(issue.messageKey, field ? { field } : undefined));
+        return;
+      }
+    }
     setSaving(true);
     setError('');
     try {
       const options = Object.fromEntries(
-        Object.entries(values).filter(([, value]) => value !== undefined && value !== '' && value !== false),
+        meta.fields
+          .filter(fieldVisible)
+          .map((field) => [field.key, values[field.key]])
+          .filter(([, value]) => value !== undefined && value !== ''),
       );
       await addPlatformToProject(projectName, {
         type: platformType,
@@ -60,7 +94,14 @@ export default function PlatformManualForm({
     <div>
       <Typography.Title level={4}>{meta.label}</Typography.Title>
       {error && <Alert type="error" showIcon title={error} style={{ marginBottom: 16 }} />}
-      <Form layout="vertical" requiredMark="optional" onFinish={handleFinish}>
+      <Form
+        form={form}
+        layout="vertical"
+        requiredMark="optional"
+        initialValues={initialValues}
+        onValuesChange={(_, allValues) => setFormValues(allValues as Record<string, unknown>)}
+        onFinish={handleFinish}
+      >
         {basicFields.map((field) => <PlatformField key={field.key} field={field} />)}
         {advancedFields.length > 0 && (
           <Button
@@ -92,7 +133,7 @@ function PlatformField({ field }: { field: FieldDef }) {
 
   if (field.type === 'boolean') {
     return (
-      <Form.Item name={field.key} label={label} valuePropName="checked" extra={extra} initialValue={false}>
+      <Form.Item name={field.key} label={label} valuePropName="checked" extra={extra}>
         <Switch />
       </Form.Item>
     );
@@ -102,6 +143,14 @@ function PlatformField({ field }: { field: FieldDef }) {
     return (
       <Form.Item name={field.key} label={label} rules={rules} extra={extra}>
         <InputNumber style={{ width: '100%' }} placeholder={field.placeholder} />
+      </Form.Item>
+    );
+  }
+
+  if (field.type === 'select') {
+    return (
+      <Form.Item name={field.key} label={label} rules={rules} extra={extra}>
+        <Select options={(field.options || []).map((value) => ({ value, label: value }))} />
       </Form.Item>
     );
   }

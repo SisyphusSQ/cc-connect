@@ -3,7 +3,7 @@ MODULE     := github.com/chenhg5/cc-connect
 CMD        := ./cmd/cc-connect
 DIST       := dist
 
-VERSION := v1.4.1-2
+VERSION := v1.5.0-0
 COMMIT     := $(shell git rev-parse --short HEAD 2>/dev/null || echo "none")
 BUILD_TIME := $(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
 
@@ -33,8 +33,8 @@ PLATFORMS := \
 #   make build EXCLUDE=discord,dingtalk,qq,qqbot,line
 # ---------------------------------------------------------------------------
 
-ALL_AGENTS    := acp antigravity claudecode codex copilot cursor devin gemini iflow kimi opencode pi qoder tmux
-ALL_PLATFORMS := feishu telegram discord slack dingtalk wecom weixin qq qqbot line weibo max matrix webex
+ALL_AGENTS    := acp antigravity claudecode codex copilot cursor devin gemini iflow kimi opencode pi qoder reasonix tmux
+ALL_PLATFORMS := cloud_web dingtalk discord feishu googlechat line matrix max qq qqbot slack telegram tuitui webex wecom weibo weixin wps-agentspace wps-xiezuo yuanbao
 ALL_EXTRAS    := web
 
 COMMA := ,
@@ -51,11 +51,11 @@ endif
 ifdef PLATFORMS_INCLUDE
   _WANTED_PLATFORMS := $(subst $(COMMA), ,$(PLATFORMS_INCLUDE))
   _EXCLUDE_PLATFORMS := $(filter-out $(_WANTED_PLATFORMS),$(ALL_PLATFORMS))
-  _EXCLUDE_TAGS += $(addprefix no_,$(_EXCLUDE_PLATFORMS))
+  _EXCLUDE_TAGS += $(addprefix no_,$(subst -,_,$(_EXCLUDE_PLATFORMS)))
 endif
 
 ifdef EXCLUDE
-  _EXCLUDE_TAGS += $(addprefix no_,$(subst $(COMMA), ,$(EXCLUDE)))
+  _EXCLUDE_TAGS += $(addprefix no_,$(subst -,_,$(subst $(COMMA), ,$(EXCLUDE))))
 endif
 
 ifdef NO_WEB

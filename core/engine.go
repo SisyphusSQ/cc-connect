@@ -21,6 +21,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -189,6 +190,23 @@ func (e *Engine) SetPendingRestartTimeout(d time.Duration) {
 func (e *Engine) runPendingRestartNotify(req *RestartRequest, firedCh chan struct{}) {
 	defer close(firedCh)
 
+	// Recover from any panic inside dispatch (ReconstructReplyCtx / Send) so a
+	// platform-side panic cannot take down the whole cc-connect process.
+	// See #1686 P1-A. Without this defer, a panic in the restart-notify
+	// goroutine kills the daemon because no higher-level recover exists.
+	defer func() {
+		if r := recover(); r != nil {
+			const maxStackBytes = 8192
+			stack := make([]byte, maxStackBytes)
+			n := runtime.Stack(stack, false)
+			slog.Error("restart notify panic",
+				"platform", req.Platform,
+				"session", req.SessionKey,
+				"panic", r,
+				"stack", string(stack[:n]))
+		}
+	}()
+
 	// Wait briefly for the platform to reach ready if it's not already.
 	// Upper bound: matches the typical Telegram 2-3 s connect window
 	// with margin (see defaultPendingRestartTimeout), and short enough
@@ -310,6 +328,7 @@ type DisplayCfg struct {
 	ToolMaxLen       int // max runes for tool use preview; 0 = no truncation
 	ToolMessages     bool
 	HistoryMaxLen    *int // max runes for /history entries; nil = default, 0 = no truncation
+	HideAgentFooter  bool // strip model/token footer lines emitted as agent text
 }
 
 // InstantReplyCfg controls the immediate confirmation reply sent when a message
@@ -378,18 +397,22 @@ type Engine struct {
 	userRoles    *UserRoleManager // nil = legacy mode (no per-user policies)
 	userRolesMu  sync.RWMutex     // protects userRoles, disabledCmds, and adminFrom
 
-	rateLimiter       *RateLimiter
-	outgoingRL        *OutgoingRateLimiter
-	streamPreview     StreamPreviewCfg
-	instantReply      InstantReplyCfg
-	references        ReferenceRenderCfg
-	relayManager      *RelayManager
-	eventIdleTimeout  time.Duration
-	maxTurnTime       time.Duration // absolute wall-clock cap per turn (0 = disabled)
-	maxQueuedMessages int
-	dirHistory        *DirHistory
-	baseWorkDir       string
-	projectState      *ProjectStateStore
+	rateLimiter      *RateLimiter
+	outgoingRL       *OutgoingRateLimiter
+	streamPreview    StreamPreviewCfg
+	instantReply     InstantReplyCfg
+	references       ReferenceRenderCfg
+	relayManager     *RelayManager
+	eventIdleTimeout time.Duration
+	maxTurnTime      time.Duration // absolute wall-clock cap per turn (0 = disabled)
+	// agentSessionIdleTimeoutNanos 在单轮正常结束后关闭空闲的 live agent 进程，
+	// 同时保留已保存的 session ID，便于下次继续恢复。
+	agentSessionIdleTimeoutNanos atomic.Int64
+	agentSessionIdleSeq          atomic.Uint64
+	maxQueuedMessages            int
+	dirHistory                   *DirHistory
+	baseWorkDir                  string
+	projectState                 *ProjectStateStore
 
 	// Auto-compress settings
 	autoCompressEnabled   bool
@@ -524,6 +547,10 @@ type interactiveState struct {
 	// to confirm it has exited before starting a new foreground turn.
 	unsolicitedCancel context.CancelFunc // nil when no reader is running
 	unsolicitedDone   chan struct{}      // closed when the reader goroutine exits
+
+	// agentSessionIdleCancel 取消当前会话的 idle 关闭计时器。
+	agentSessionIdleCancel context.CancelFunc
+	agentSessionIdleToken  uint64
 
 	// eventsNeedResync is true when buffered events should be drained before
 	// the next turn (e.g. after an abnormal exit). Defaults to true (safe);
@@ -908,6 +935,29 @@ func (e *Engine) SetResetOnIdle(d time.Duration) {
 	e.resetOnIdle = d
 }
 
+// SetAgentSessionIdleTimeout 配置单轮正常结束后的 live agent 空闲关闭时间。
+// 小于等于 0 表示禁用。
+func (e *Engine) SetAgentSessionIdleTimeout(d time.Duration) {
+	if d <= 0 {
+		e.agentSessionIdleTimeoutNanos.Store(0)
+		e.cancelAllAgentSessionIdleCloses()
+		return
+	}
+	e.agentSessionIdleTimeoutNanos.Store(int64(d))
+}
+
+func (e *Engine) cancelAllAgentSessionIdleCloses() {
+	e.interactiveMu.Lock()
+	states := make([]*interactiveState, 0, len(e.interactiveStates))
+	for _, state := range e.interactiveStates {
+		states = append(states, state)
+	}
+	e.interactiveMu.Unlock()
+	for _, state := range states {
+		e.cancelAgentSessionIdleClose(state)
+	}
+}
+
 // SetShowContextIndicator controls whether the reply footer's first line
 // (model / reasoning effort / token counts / context %) is rendered.
 // Subordinate to SetReplyFooterEnabled — when the footer is disabled overall,
@@ -1172,6 +1222,42 @@ var privilegedCommands = map[string]bool{
 	"upgrade": true,
 	"web":     true,
 	"diff":    true,
+}
+
+// isPrivilegedCommandInvocation extends the privilegedCommands map to
+// also gate specific destructive subcommands. Currently:
+//
+//   - /commands addexec ...    — registers a custom shell-exec command
+//   - /cron    addexec ...     — schedules a recurring shell-exec
+//
+// Both effectively create new admin-only commands at runtime; if a
+// non-admin can call addexec, they can install arbitrary shell commands
+// for any future user to trigger. Sibling subcommands (list, add, del,
+// etc.) remain non-privileged.
+//
+// Returns true when the cmdID itself is in privilegedCommands, or when
+// the (cmdID, args[0]) pair matches one of the explicitly-gated
+// subcommands above.
+func isPrivilegedCommandInvocation(cmdID string, args []string) bool {
+	if privilegedCommands[cmdID] {
+		return true
+	}
+	if len(args) == 0 {
+		return false
+	}
+	sub := strings.ToLower(args[0])
+	switch cmdID {
+	case "commands":
+		return matchSubCommand(sub, []string{
+			"list", "add", "addexec", "del", "delete", "rm", "remove",
+		}) == "addexec"
+	case "cron":
+		return matchSubCommand(sub, []string{
+			"add", "addexec", "list", "del", "delete", "rm", "remove", "enable", "disable", "mute", "unmute", "setup",
+		}) == "addexec"
+	default:
+		return false
+	}
 }
 
 // isAdmin checks whether the given user ID is authorized for privileged commands.
@@ -2821,6 +2907,9 @@ func (e *Engine) handleMessage(p Platform, msg *Message) {
 	var wsAgent Agent
 	var wsSessions *SessionManager
 	var resolvedWorkspace string
+	if e.multiWorkspace {
+		e.migrateLegacyWorkspaceBindings(msg)
+	}
 	if forcedWorkDir := e.sendWorkDirForSession(msg.SessionKey); forcedWorkDir != "" {
 		e.bindSendWorkDir(msg.SessionKey, forcedWorkDir)
 		var err error
@@ -2976,7 +3065,14 @@ sessionLocked:
 	// reset_on_idle_mins is not defeated by heartbeats or unsolicited agent
 	// output running between user messages (#1115).
 	session.TouchUserActivity()
+
+	// Ensure an interactiveState entry exists before launching the async
+	// processor so messages arriving during session startup can be queued
+	// instead of dropped (issue #565). This is still needed after idle auto-
+	// reset because cleanupInteractiveState may remove the early placeholder.
+	e.ensureInteractiveStateForQueueing(interactiveKey, p, msg.ReplyCtx)
 	e.noteUserMessageAccepted(interactiveKey, msg.UserMessageTimeMs)
+	runMessageAccepted(msg)
 	slog.Debug("user message accepted for processing",
 		"platform", msg.Platform,
 		"session", msg.SessionKey,
@@ -2992,6 +3088,15 @@ sessionLocked:
 	)
 
 	go e.processInteractiveMessageWith(p, msg, session, agent, sessions, interactiveKey, resolvedWorkspace, msg.SessionKey)
+}
+
+func runMessageAccepted(msg *Message) {
+	if msg == nil || msg.OnAccepted == nil {
+		return
+	}
+	callback := msg.OnAccepted
+	msg.OnAccepted = nil
+	callback()
 }
 
 func (e *Engine) maybeAutoResetSessionOnIdle(p Platform, msg *Message, sessions *SessionManager, interactiveKey string, session *Session) *Session {
@@ -3105,6 +3210,7 @@ func (e *Engine) queueMessageForBusySession(p Platform, msg *Message, interactiv
 		channelKey:        msg.ChannelKey,
 		userMessageTimeMs: msg.UserMessageTimeMs,
 	})
+	runMessageAccepted(msg)
 	queueDepth := len(state.pendingMessages)
 
 	slog.Debug("user message accepted into queue",
@@ -3658,6 +3764,7 @@ func (e *Engine) processInteractiveMessageWith(p Platform, msg *Message, session
 		e.reply(p, msg.ReplyCtx, e.i18n.T(MsgFailedToStartAgentSession))
 		return
 	}
+	e.cancelAgentSessionIdleClose(state)
 
 	if workspaceDir != "" && e.workspacePool != nil {
 		ws := e.workspacePool.GetOrCreate(workspaceDir)
@@ -3728,7 +3835,7 @@ func (e *Engine) processInteractiveMessageWith(p Platform, msg *Message, session
 			sendDone <- fmt.Errorf("agent session became nil")
 			return
 		}
-		sendDone <- as.Send(promptContent, msg.Images, msg.Files)
+		sendDone <- as.Send(promptContent, msg.MessageID, msg.Images, msg.Files)
 	}()
 
 	e.processInteractiveEvents(state, session, sessions, interactiveKey, msg.MessageID, turnStart, stopTyping, sendDone, msg.ReplyCtx)
@@ -3737,22 +3844,29 @@ func (e *Engine) processInteractiveMessageWith(p Platform, msg *Message, session
 	}
 	stopTyping = nil // ownership transferred; prevent defer from double-stopping
 
+	// Start unsolicited reader and arm the idle close timer BEFORE draining
+	// queued messages. drainPendingMessages releases the session lock, and
+	// without this ordering the next user message can race in, call
+	// cancelAgentSessionIdleClose (a no-op since nothing was scheduled yet),
+	// and then the late schedule below arms a timer that no subsequent cancel
+	// will catch — closing the live session mid-turn. See #1686 P1-C P1-2.
+	// The schedule's own state checks (agentSession nil, stopped, etc.) and
+	// cleanupInteractiveStateForIdleToken's stale-token guard make it safe to
+	// leave a scheduled timer running across drain.
+	state.mu.Lock()
+	alive := state.agentSession != nil && state.agentSession.Alive() && !state.stopped && !state.eventsNeedResync
+	state.mu.Unlock()
+	if alive {
+		e.startUnsolicitedReader(state, session, sessions, interactiveKey, workspaceDir)
+		e.scheduleAgentSessionIdleClose(interactiveKey, state)
+	}
+
 	// Guard against a narrow race: a message may have been queued between
 	// processInteractiveEvents observing an empty queue and returning here
 	// (session is still locked, so handleMessage's TryLock fails and routes
 	// the message to queueMessageForBusySession). Drain any such orphans.
 	if e.drainPendingMessages(state, session, sessions, interactiveKey) {
 		unlocked = true
-	}
-
-	// Start unsolicited reader if the session is still alive and the last
-	// turn ended cleanly. This goroutine will consume agent-initiated events
-	// (e.g. background task completions) and relay them to the platform.
-	state.mu.Lock()
-	alive := state.agentSession != nil && state.agentSession.Alive() && !state.stopped && !state.eventsNeedResync
-	state.mu.Unlock()
-	if alive {
-		e.startUnsolicitedReader(state, session, sessions, interactiveKey, workspaceDir)
 	}
 }
 
@@ -4132,6 +4246,10 @@ func (e *Engine) cleanupInteractiveState(sessionKey string, expected ...*interac
 		state.mu.Lock()
 		agentSession = state.agentSession
 		state.agentSession = nil
+		if state.agentSessionIdleCancel != nil {
+			state.agentSessionIdleCancel()
+			state.agentSessionIdleCancel = nil
+		}
 		state.mu.Unlock()
 	}
 	e.interactiveMu.Unlock()
@@ -4174,6 +4292,111 @@ func (e *Engine) cleanupInteractiveState(sessionKey string, expected ...*interac
 		return
 	}
 	delete(e.interactiveStates, sessionKey)
+	e.interactiveMu.Unlock()
+}
+
+func (e *Engine) cancelAgentSessionIdleClose(state *interactiveState) {
+	if state == nil {
+		return
+	}
+	state.mu.Lock()
+	cancel := state.agentSessionIdleCancel
+	state.agentSessionIdleCancel = nil
+	state.agentSessionIdleToken = 0
+	state.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+}
+
+func (e *Engine) scheduleAgentSessionIdleClose(sessionKey string, state *interactiveState) {
+	if state == nil {
+		return
+	}
+	timeout := time.Duration(e.agentSessionIdleTimeoutNanos.Load())
+	if timeout <= 0 {
+		return
+	}
+
+	e.cancelAgentSessionIdleClose(state)
+	ctx, cancel := context.WithCancel(e.ctx)
+	token := e.agentSessionIdleSeq.Add(1)
+	state.mu.Lock()
+	if state.stopped ||
+		state.agentSession == nil ||
+		!state.agentSession.Alive() ||
+		state.eventsNeedResync ||
+		state.pending != nil ||
+		len(state.pendingMessages) > 0 {
+		state.mu.Unlock()
+		cancel()
+		return
+	}
+	state.agentSessionIdleCancel = cancel
+	state.agentSessionIdleToken = token
+	state.mu.Unlock()
+
+	go func() {
+		timer := time.NewTimer(timeout)
+		defer timer.Stop()
+		select {
+		case <-ctx.Done():
+			return
+		case <-timer.C:
+		}
+
+		e.cleanupInteractiveStateForIdleToken(sessionKey, state, token, timeout)
+	}()
+}
+
+func (e *Engine) cleanupInteractiveStateForIdleToken(sessionKey string, expected *interactiveState, token uint64, timeout time.Duration) {
+	e.interactiveMu.Lock()
+	state, ok := e.interactiveStates[sessionKey]
+	if !ok || state == nil || state != expected {
+		e.interactiveMu.Unlock()
+		return
+	}
+
+	var agentSession AgentSession
+	state.mu.Lock()
+	if state.agentSessionIdleToken != token ||
+		state.agentSession == nil ||
+		!state.agentSession.Alive() ||
+		state.stopped ||
+		state.eventsNeedResync ||
+		state.pending != nil ||
+		len(state.pendingMessages) > 0 {
+		state.mu.Unlock()
+		e.interactiveMu.Unlock()
+		return
+	}
+	agentSession = state.agentSession
+	state.agentSession = nil
+	state.agentSessionIdleCancel = nil
+	state.agentSessionIdleToken = 0
+	state.mu.Unlock()
+	e.interactiveMu.Unlock()
+
+	slog.Info("agent session idle timeout: closing live agent session",
+		"session_key", sessionKey, "timeout", timeout)
+	e.stopUnsolicitedReader(state)
+	state.markStopped()
+
+	state.mu.Lock()
+	pending := state.pending
+	state.pending = nil
+	state.mu.Unlock()
+	if pending != nil {
+		pending.resolve()
+	}
+	e.notifyDroppedQueuedMessages(state, fmt.Errorf("session reset"))
+
+	e.closeAgentSessionWithTimeout(sessionKey, agentSession)
+
+	e.interactiveMu.Lock()
+	if currentState, currentOk := e.interactiveStates[sessionKey]; currentOk && currentState == expected {
+		delete(e.interactiveStates, sessionKey)
+	}
 	e.interactiveMu.Unlock()
 }
 
@@ -4438,7 +4661,7 @@ func (e *Engine) runUnsolicitedReader(ctx context.Context, cancel context.Cancel
 				}
 
 				if fullResponse != "" {
-					for _, chunk := range splitMessage(fullResponse, maxPlatformMessageLen) {
+					for _, chunk := range SplitMessageCodeFenceAware(fullResponse, maxPlatformMessageLen) {
 						e.send(p, replyCtx, chunk)
 					}
 				}
@@ -4467,6 +4690,14 @@ func (e *Engine) runUnsolicitedReader(ctx context.Context, cancel context.Cancel
 				state.mu.Lock()
 				state.eventsNeedResync = false
 				state.mu.Unlock()
+
+				// Reset the per-session idle close timer so a series of
+				// background task completions does not get cut short by the
+				// idle timeout armed at the end of the last foreground turn.
+				// Without this, a long-running background turn (e.g. cron task
+				// that reports progress every minute) can be killed mid-flight
+				// when the original idle timer fires. See #1686 P1-C P1-1.
+				e.scheduleAgentSessionIdleClose(sessionKey, state)
 
 				slog.Info("unsolicited turn complete",
 					"session", sessionKey,
@@ -4837,7 +5068,7 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 					} else {
 						segment := strings.Join(textParts[segmentStart:], "")
 						if segment != "" {
-							for _, chunk := range splitMessage(segment, maxPlatformMessageLen) {
+							for _, chunk := range SplitMessageCodeFenceAware(segment, maxPlatformMessageLen) {
 								sendWorkspace(p, replyCtx, chunk)
 							}
 						}
@@ -4860,7 +5091,7 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 					if !previewActive {
 						segment := strings.Join(textParts[segmentStart:], "")
 						if segment != "" {
-							for _, chunk := range splitMessage(segment, maxPlatformMessageLen) {
+							for _, chunk := range SplitMessageCodeFenceAware(segment, maxPlatformMessageLen) {
 								sendWorkspace(p, replyCtx, chunk)
 							}
 						}
@@ -4924,7 +5155,7 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 					} else {
 						segment := strings.Join(textParts[segmentStart:], "")
 						if segment != "" {
-							for _, chunk := range splitMessage(segment, maxPlatformMessageLen) {
+							for _, chunk := range SplitMessageCodeFenceAware(segment, maxPlatformMessageLen) {
 								sendWorkspace(p, replyCtx, chunk)
 							}
 						}
@@ -4968,7 +5199,7 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 					if !previewActive {
 						segment := strings.Join(textParts[segmentStart:], "")
 						if segment != "" {
-							for _, chunk := range splitMessage(segment, maxPlatformMessageLen) {
+							for _, chunk := range SplitMessageCodeFenceAware(segment, maxPlatformMessageLen) {
 								sendWorkspace(p, replyCtx, chunk)
 							}
 						}
@@ -4998,7 +5229,11 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 					}
 				}
 				toolMsg := fmt.Sprintf(e.i18n.T(MsgTool), toolCount, event.ToolName, formattedInput)
-				if !cp.AppendEvent(ProgressEntryToolUse, toolInput, event.ToolName, toolMsg) {
+				// Truncate the tool input that goes into the progress card payload so
+				// tool_max_len applies uniformly to progress_style=card, matching
+				// the rich-card path. event.ToolInput itself is left untouched.
+				cardToolInput := truncateIf(toolInput, e.display.ToolMaxLen)
+				if !cp.AppendEvent(ProgressEntryToolUse, cardToolInput, event.ToolName, toolMsg) {
 					for _, chunk := range SplitMessageCodeFenceAware(toolMsg, maxPlatformMessageLen) {
 						sendWorkspace(p, replyCtx, chunk)
 					}
@@ -5053,7 +5288,11 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 			}
 
 		case EventText:
-			if event.Content != "" && !isEllipsisOnly(event.Content) {
+			content := event.Content
+			if e.display.HideAgentFooter {
+				content = stripAgentFooterLines(content)
+			}
+			if content != "" && !isEllipsisOnly(content) {
 				// Pre-compute silentHold transition including this chunk so the
 				// rich-card path doesn't leak a preview that gets recalled at
 				// end-of-stream when the text resolves to bare NO_REPLY (Lark
@@ -5061,19 +5300,19 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 				// paths share this single transition; couldBeSilentPrefix is
 				// monotonically decreasing as segments grow, so the transition
 				// is held → released at most once per segment.
-				peekSegment := strings.Join(textParts[segmentStart:], "") + event.Content
+				peekSegment := strings.Join(textParts[segmentStart:], "") + content
 				prevHold := silentHold
 				silentHold = couldBeSilentPrefix(peekSegment)
 				releasedNow := prevHold && !silentHold
 
 				handledByStreamCard := false
 				if streamCard != nil && !streamCard.Failed() {
-					textParts = append(textParts, event.Content) // always accumulate for history
+					textParts = append(textParts, content) // always accumulate for history
 					if !silentHold {
 						if releasedNow {
 							cardAnswerText.WriteString(peekSegment)
 						} else {
-							cardAnswerText.WriteString(event.Content)
+							cardAnswerText.WriteString(content)
 						}
 						_ = streamCard.Update(e.ctx, buildCardContent(cardThinkingText, cardToolCalls, cardAnswerText.String()))
 					}
@@ -5097,8 +5336,8 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 							sp.setStatus(CardStatusWorking)
 						}
 					}
-					textParts = append(textParts, event.Content)
-					partialText += event.Content
+					textParts = append(textParts, content)
+					partialText += content
 					if hasRichCard {
 						if !silentHold {
 							// Lazy creation: if we held during the first text events and
@@ -5159,7 +5398,7 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 							if releasedNow {
 								sp.appendText(peekSegment) // flush all held chunks at once
 							} else {
-								sp.appendText(event.Content)
+								sp.appendText(content)
 							}
 						}
 					}
@@ -5180,7 +5419,18 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 			}
 
 		case EventPermissionRequest:
-			isAskQuestion := event.ToolName == "AskUserQuestion" && len(event.Questions) > 0
+			// extension_select is a Pi extension UI request routed via the
+			// AskUserQuestion rich-card path. The pi session adapter populates
+			// event.Questions so it renders as a button card (same UX as Claude
+			// Code's AskUserQuestion).
+			//
+			// extension_confirm is intentionally NOT in this list: extensions
+			// use ctx.ui.confirm() to ask the user for permission on a tool
+			// call (e.g. permission-gate on Bash), and the engine must render
+			// it as a regular permission request (Allow/Deny) so the UX
+			// matches other agents. See forwardConfirm in agent/pi/session.go.
+			isAskQuestion := (event.ToolName == "AskUserQuestion" ||
+				event.ToolName == "extension_select") && len(event.Questions) > 0
 
 			state.mu.Lock()
 			autoApprove := state.approveAll
@@ -5201,7 +5451,7 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 				if !previewActive {
 					segment := strings.Join(textParts[segmentStart:], "")
 					if segment != "" {
-						for _, chunk := range splitMessage(segment, maxPlatformMessageLen) {
+						for _, chunk := range SplitMessageCodeFenceAware(segment, maxPlatformMessageLen) {
 							sendWorkspace(p, replyCtx, chunk)
 						}
 					}
@@ -5253,6 +5503,15 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 			<-pending.Resolved
 			slog.Info("permission resolved", "request_id", event.RequestID)
 
+			// The stream preview was frozen+detached when this permission
+			// request was emitted, so any subsequent EventText in this turn
+			// would otherwise be buffered until EventResult and sent as a
+			// single bulk message (regression fixed by
+			// fix/stream-preview-after-permission). unfreeze() restores the
+			// preview so the post-resolution output opens a fresh streaming
+			// card and continues to update incrementally.
+			sp.unfreeze()
+
 			// Restart idle timer after permission is resolved
 			if idleTimer != nil {
 				idleTimer.Reset(e.eventIdleTimeout)
@@ -5300,6 +5559,9 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 			state.mu.Unlock()
 
 			fullResponse := event.Content
+			if e.display.HideAgentFooter {
+				fullResponse = stripAgentFooterLines(fullResponse)
+			}
 			// When tool progress is hidden, segmentStart stays 0 and textParts
 			// contains ALL text across tool boundaries. Prefer the full accumulated
 			// text over event.Content which only contains the last assistant segment.
@@ -5437,16 +5699,32 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 			// --- StreamingCard path ---
 			if streamCard != nil && !streamCard.Failed() {
 				sp.finish("", "") // cleanup preview (should be no-op if card was active)
-				// Build final card content with full response
-				finalContent := buildCardContent(cardThinkingText, cardToolCalls, fullResponse)
+				// Silent reply: never render the NO_REPLY marker into the card.
+				// cardAnswerText holds only the text streamed BEFORE the marker
+				// (empty for a bare NO_REPLY, since silentHold suppresses card
+				// writes while the segment is still a NO_REPLY prefix). Finalize
+				// with that instead of fullResponse so the card resolves to Done
+				// without leaking the marker, and skip the fallback send that
+				// would otherwise post the suppressed marker verbatim.
+				cardBody := fullResponse
+				if isSilent {
+					cardBody = strings.TrimRight(cardAnswerText.String(), " \t\r\n")
+				}
+				finalContent := buildCardContent(cardThinkingText, cardToolCalls, cardBody)
 				if err := streamCard.Finalize(e.ctx, finalContent); err != nil {
 					slog.Error("streaming card finalize failed, sending fallback", "error", err)
-					// Fallback: send the response as a normal message
-					for _, chunk := range splitMessage(fullResponse, maxPlatformMessageLen) {
-						if err := sendWorkspaceWithError(p, replyCtx, chunk); err != nil {
-							return
+					// Fallback: send the response as a normal message — but never
+					// for a silent reply, which has no deliverable content.
+					if !isSilent {
+						for _, chunk := range SplitMessageCodeFenceAware(fullResponse, maxPlatformMessageLen) {
+							if err := sendWorkspaceWithError(p, replyCtx, chunk); err != nil {
+								return
+							}
 						}
 					}
+				}
+				if isSilent {
+					slog.Info("silent reply suppressed", "session", session.ID)
 				}
 			} else if isSilent {
 				// Silent reply: drop any in-flight preview and skip all send paths.
@@ -5671,7 +5949,7 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 						nextSend <- fmt.Errorf("agent session became nil")
 						return
 					}
-					nextSend <- as.Send(queuedPrompt, queued.images, queued.files)
+					nextSend <- as.Send(queuedPrompt, queued.messageID, queued.images, queued.files)
 				}()
 				pendingSend = nextSend
 
@@ -5861,7 +6139,7 @@ channelClosed:
 			if segmentStart < len(textParts) {
 				unsent := strings.Join(textParts[segmentStart:], "")
 				if unsent != "" {
-					for _, chunk := range splitMessage(unsent, maxPlatformMessageLen) {
+					for _, chunk := range SplitMessageCodeFenceAware(unsent, maxPlatformMessageLen) {
 						if err := sendWorkspaceWithError(p, replyCtx, chunk); err != nil {
 							return
 						}
@@ -5871,7 +6149,7 @@ channelClosed:
 		} else if sp.finish(fullResponse, "") {
 			slog.Debug("stream preview: finalized in-place (process exited)")
 		} else {
-			for _, chunk := range splitMessage(fullResponse, maxPlatformMessageLen) {
+			for _, chunk := range SplitMessageCodeFenceAware(fullResponse, maxPlatformMessageLen) {
 				if err := sendWorkspaceWithError(p, replyCtx, chunk); err != nil {
 					return
 				}
@@ -5999,7 +6277,7 @@ func (e *Engine) drainPendingMessages(state *interactiveState, session *Session,
 				sendDone <- fmt.Errorf("agent session became nil")
 				return
 			}
-			sendDone <- as.Send(prompt, queued.images, queued.files)
+			sendDone <- as.Send(prompt, queued.messageID, queued.images, queued.files)
 		}()
 
 		var stopTyping func()
@@ -6091,7 +6369,7 @@ func (e *Engine) cmdPs(p Platform, msg *Message, args []string) {
 		e.reply(p, msg.ReplyCtx, e.i18n.T(MsgPsNoSession))
 		return
 	}
-	if err := state.agentSession.Send(text, nil, nil); err != nil {
+	if err := state.agentSession.Send(text, "", nil, nil); err != nil {
 		slog.Error("ps: send failed", "error", err)
 		e.reply(p, msg.ReplyCtx, e.i18n.T(MsgPsSendFailed))
 		return
@@ -6207,7 +6485,7 @@ func (e *Engine) handleCommand(p Platform, msg *Message, raw string) bool {
 		return true
 	}
 
-	if cmdID != "" && privilegedCommands[cmdID] && !e.isAdmin(msg.UserID) {
+	if cmdID != "" && isPrivilegedCommandInvocation(cmdID, args) && !e.isAdmin(msg.UserID) {
 		slog.Info("audit: command_blocked",
 			"user_id", msg.UserID, "platform", msg.Platform,
 			"project", e.name, "command", cmdID, "reason", "unauthorized")
@@ -7433,7 +7711,7 @@ func (e *Engine) buildClaudeStatusLineFooter(agent Agent, session AgentSession, 
 // which case caller should bail). sendFn is the workspace-aware send closure
 // (so the helper picks up workspace transforms like path remapping).
 func sendChunksWithStatusFooter(ctx context.Context, p Platform, replyCtx any, body, statusFooter string, sendFn func(Platform, any, string) error) bool {
-	chunks := splitMessage(body, maxPlatformMessageLen)
+	chunks := SplitMessageCodeFenceAware(body, maxPlatformMessageLen)
 	for i, chunk := range chunks {
 		isLast := i == len(chunks)-1
 		if isLast && statusFooter != "" {
@@ -8476,9 +8754,15 @@ func selectUsageWindows(report *UsageReport) (*UsageWindow, *UsageWindow) {
 			}
 		}
 		if primary == nil && len(bucket.Windows) > 0 {
-			primary = &bucket.Windows[0]
+			// Fall back to the first window when no 5-hour quota is reported
+			// (e.g. Codex accounts whose first bucket only exposes a 7-day
+			// window). Skip it if the slot is already occupied by the 7-day
+			// window so the same block is not rendered twice.
+			if secondary != &bucket.Windows[0] {
+				primary = &bucket.Windows[0]
+			}
 		}
-		if secondary == nil && len(bucket.Windows) > 1 {
+		if secondary == nil && len(bucket.Windows) > 1 && &bucket.Windows[1] != primary {
 			secondary = &bucket.Windows[1]
 		}
 		if primary != nil || secondary != nil {
@@ -10197,7 +10481,7 @@ func (e *Engine) runCompress(state *interactiveState, session *Session, sessions
 	}
 
 	cmd := compressor.CompressCommand()
-	if err := state.agentSession.Send(cmd, nil, nil); err != nil {
+	if err := state.agentSession.Send(cmd, "", nil, nil); err != nil {
 		if !auto {
 			e.reply(p, replyCtx, fmt.Sprintf(e.i18n.T(MsgError), err))
 		}
@@ -11729,7 +12013,7 @@ func (e *Engine) sendAlreadyRenderedWithError(p Platform, replyCtx any, content 
 				"platform", p.Name(),
 				"error", err,
 				"content_len", len(content),
-				"hint", "user needs to send a new message to refresh context_token")
+				"hint", "user needs to send a message to the bot first so a context_token can be captured")
 		} else {
 			slog.Error("platform send failed", "platform", p.Name(), "error", err, "content_len", len(content))
 		}
@@ -15836,7 +16120,7 @@ func (e *Engine) HandleRelay(ctx context.Context, fromProject, sourceSessionKey,
 
 	saveRelaySessionID(agentSession.CurrentSessionID(), false)
 
-	if err := agentSession.Send(message, nil, nil); err != nil {
+	if err := agentSession.Send(message, "", nil, nil); err != nil {
 		agentSession.Close()
 		return "", fmt.Errorf("send relay message: %w", err)
 	}
@@ -16269,6 +16553,29 @@ func effectiveWorkspaceChannelKey(msg *Message) string {
 		return workspaceChannelKey(msg.Platform, msg.ChannelKey)
 	}
 	return extractWorkspaceChannelKey(msg.SessionKey)
+}
+
+// migrateLegacyWorkspaceBindings moves bindings from a platform-provided
+// legacy channel scope to the current scope before workspace resolution. The
+// platform owns both opaque identifiers; core only adds the platform prefix.
+func (e *Engine) migrateLegacyWorkspaceBindings(msg *Message) {
+	if e.workspaceBindings == nil || msg == nil || msg.ChannelKey == "" || msg.LegacyChannelKey == "" {
+		return
+	}
+	oldChannelKey := workspaceChannelKey(msg.Platform, msg.LegacyChannelKey)
+	newChannelKey := workspaceChannelKey(msg.Platform, msg.ChannelKey)
+	if oldChannelKey == "" || newChannelKey == "" || oldChannelKey == newChannelKey {
+		return
+	}
+
+	for _, projectKey := range []string{"project:" + e.name, sharedWorkspaceBindingsKey} {
+		if e.workspaceBindings.MigrateChannelKey(projectKey, oldChannelKey, newChannelKey) {
+			slog.Info("workspace binding migrated",
+				"project", projectKey,
+				"old_channel_key", oldChannelKey,
+				"new_channel_key", newChannelKey)
+		}
+	}
 }
 
 // commandContext resolves the appropriate agent, session manager, and interactive key
@@ -16860,6 +17167,31 @@ func contextIndicatorText(inputTokens int) string {
 // Used to strip such markers from delivered text — the ctx indicator is now
 // rendered exclusively in the reply footer.
 var ctxSelfReportRe = regexp.MustCompile(`(?m)\n?\[ctx: ~\d+%\]`)
+
+// agentFooterLineRe matches standalone agent-emitted status footer lines such as:
+// *claude-opus-4-8[1m] · out 788 · in 442 cw 0 cr 395.1k · ctx 40%*
+// The line must contain all three metrics so ordinary prose is left untouched.
+var agentFooterLineRe = regexp.MustCompile(`^[ \t]*\*?[A-Za-z0-9][^\n]*\s+·\s+out\s+[0-9][0-9A-Za-z.]*\b[^\n]*\bin\s+[0-9][0-9A-Za-z.]*\b[^\n]*\bctx\s+[0-9]+(?:\.[0-9]+)?%[^\n]*\*?[ \t]*$`)
+
+func stripAgentFooterLines(text string) string {
+	if text == "" {
+		return text
+	}
+	lines := strings.Split(text, "\n")
+	kept := lines[:0]
+	removed := false
+	for _, line := range lines {
+		if agentFooterLineRe.MatchString(line) {
+			removed = true
+			continue
+		}
+		kept = append(kept, line)
+	}
+	if !removed {
+		return text
+	}
+	return strings.TrimRight(strings.Join(kept, "\n"), "\n ")
+}
 
 // silentReplyRe matches a bare NO_REPLY marker (case-insensitive, optional surrounding whitespace).
 // When the agent emits exactly this as its full response, the platform send is suppressed

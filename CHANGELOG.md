@@ -1,4 +1,142 @@
-# Changelog
+﻿# Changelog
+
+## v1.5.0-0 (2026-08-17)
+
+Fork follow-up release based on upstream v1.5.0, carrying the Web Factor management frontend and local Feishu/Codex extensions.
+
+### Changed
+- **Upstream v1.5.0 integration**: add the upstream platform and agent adapters, stability fixes, configuration updates, and raw `web/` source tree.
+- **Web Factor**: port upstream platform metadata semantics, Cloud Web validation, Tuitui defaults, Russian management UI translations, and Ant Design `6.5.4`.
+- **Feishu and Codex**: retain topic activation/workspace isolation, quoted-file and image handling, service-tier switching, and local permission extensions.
+
+### Validation
+- Deterministic Core CUJ, config, Feishu, and Codex tests passed.
+- Factor tests (40/40), raw Web and Factor builds, `make web-all`, Go build/vet, and Ant Design lint passed.
+
+## v1.5.0 (2026-08-16)
+
+First stable release of the v1.5.0 series since v1.4.1. Stabilizes beta.1 → beta.5 (~93 commits) including production P1 fixes (#1693 / #1686).
+
+See `changelogs/v1.5.0.md` for the full themed summary.
+
+### New Platforms
+- **Tencent Yuanbao Bot API** (#1445), **cloud_web** IM gateway (#1282), **Google Chat** (#1424), **WPS Agentspace** (#1439), **Tuitui** (#849).
+
+### New Agents
+- **Reasonix** HTTP serve API adapter (#1281).
+
+### Features
+- **Feishu topic workspace isolation** (#1551), **quoted file download** (#1588), **first thread bootstrap** (#1627).
+- **Kimi Code CLI native dialect** (#1564), **Pi RPC + retry/toolcall fixes** (#1440, #1597, #1674).
+- **`agent_session_idle_timeout_mins`** (#1338), **admin-gated exec commands** (#1036).
+
+### Fixed
+- **#1686 P1 stability** — restart recover, cross-type image flush, idle close race (#1693).
+- **codex `/model` gpt-5.x** (#1546), **Claude Code session titles** (#1549), **Weixin send budget** (#1643), **attachment collisions** (#1557), and 30+ additional fixes from beta cycle.
+
+## v1.5.0-beta.5 (2026-08-16)
+
+Rolling beta with **1 commit** on top of beta.4: P1 stability fixes from beta.3 QA (#1686).
+
+See `changelogs/v1.5.0-beta.5.md` for details.
+
+### Fixed
+- **Restart-notify panic recovery** — `defer recover()` in restart-notify goroutine prevents daemon crash (#1693).
+- **Cross-type image batch flush** — flush pending image batch before non-image dispatch to prevent image loss (#1693).
+- **Idle close race fixes** — re-arm timer on background turns; schedule before drain (#1693).
+
+## v1.5.0-beta.4 (2026-08-16)
+
+Rolling beta with **6 commits** merged from `main` since beta.3. Kimi Code CLI dialect + Pi retry/toolcall fixes + WeCom quote context.
+
+See `changelogs/v1.5.0-beta.4.md` for details.
+
+### Features
+- **Kimi Code CLI native dialect** — probe-gated flags, modern resume, dual stream parser, session listing (#1564 fixing #1561).
+
+### Fixed
+- **Kimi `--work-dir` flag gating** — probe before emit (#1483 fixing #1476).
+- **Pi willRetry turn continuity** — keep turn open during auto-retry (#1597).
+- **Pi v0.84.0 toolcall_end** — handle events without cumulative message (#1674).
+- **WeCom quoted message context** (#1669).
+- **Web admin work_dir validation** (#1572).
+
+## v1.5.0-beta.3 (2026-08-14)
+
+Rolling beta with **36 commits** merged from `main` since beta.2. Owner requested beta.3 (not direct stable) — beta.2 is ~1 month old and many fixes/features landed on main.
+
+See `changelogs/v1.5.0-beta.3.md` for the full themed summary.
+
+### New Platforms
+- **Google Chat** — first-class platform adapter (#1424).
+- **WPS Agentspace** — auto-login and token encryption (#1439).
+- **Tuitui** — platform support (#849).
+
+### Features
+- **Feishu topic workspace isolation** (#1551 fixing #1543).
+- **Feishu quoted file on-demand download** (#1588).
+- **Feishu first thread mention bootstrap** (#1627).
+- **DingTalk chat-list title from content** (#1288).
+- **Antigravity tool permissions bridge** (#1328).
+- **Admin-gated exec commands** — `/commands addexec` and `/cron addexec` behind `admin_from` (#1036).
+- **Pi permission mode env injection** (#1637).
+- **Agent cmd TOML array form** (#1673 fixing #1670).
+- **sonnet[1m] fallback model** (#1107).
+
+### Fixed
+- **Weixin send budget ret=-2** — fail fast per-account (#1643).
+- **Web admin agent-type-aware permission modes** (#1251).
+- **Pi models-store.json fallback** (#1636).
+- **Core code fence split** (#1630).
+- **Core tool_max_len in card mode** (#1257).
+- **DingTalk @userid extraction** (#1250).
+- **Attachment filename collisions** (#1557).
+- **Claude Code session title fallback** (#1549).
+- **Claude Code missing work_dir detection** (#1425).
+- **Antigravity session resume** (#1584).
+- **Usage 7-day window duplicate render** (#1583).
+- **i18n /model switch copy** (#1373).
+- **CLI reject unknown commands** (#353).
+- **Daemon CheckLinger stub on non-Linux** (#1093).
+- **Kimi preset global/China split**.
+- **cloud-web IPv6 test fix** (#1646).
+
+## v1.5.0-beta.2 (2026-07-14)
+
+Rolling beta with 1 commit on top of beta.1: codex `/model` gpt-5.x visibility fix. Owner requested beta.2 (not direct stable) after E2E validation.
+
+See `changelogs/v1.5.0-beta.2.md` for details.
+
+### Fixed
+- **codex `/model` gpt-5.x visibility** — replace stale 11-entry `openaiChatModels` static allowlist (unchanged since 2026-03) with prefix pattern matching (`gpt-*`, `chatgpt-*`, `codex-*`, `o1-*`, `o3-*`, `o4-*`, `o5-*`) plus non-chat modality exclusions. Users on codex-cli ≥ 0.143 fetching models via API could not select `gpt-5.6-sol/terra/luna` etc. Users with explicit `model_catalog_json` or provider `models = [...]` config unaffected (#1546 fixing user report, cherry-pick #1547, @chenhg5).
+
+## v1.5.0-beta.1 (2026-07-06)
+
+First beta of the v1.5.0 series since v1.4.1 stable. **Three new integration surfaces** join the family: Tencent Yuanbao Bot API, self-hosted `cloud_web` IM gateway (CWIP v1), and the Reasonix agent adapter — plus Pi RPC mode, Russian i18n, per-session agent idle timeout, and a batch of platform/core fixes.
+
+See `changelogs/v1.5.0-beta.1.md` for the full themed summary with credits.
+
+### New Platforms
+- **Tencent Yuanbao Bot API** — first-class Yuanbao platform adapter (#1445, @skyblue).
+- **cloud_web** — self-hosted IM gateway platform (CWIP v1 protocol; websocket / long_poll / gateway transports). See `docs/cloud-web.md` (#1282, @jiagou123).
+
+### New Agents
+- **Reasonix** — HTTP serve API adapter (POST /submit, SSE /events, POST /approve) with default/yolo/plan permission modes (#1281, @mchenziyi).
+
+### Features
+- **`agent_session_idle_timeout_mins`** — per-project config to close idle live agent processes after a clean turn while preserving session + saved agent session ID; next message resumes the same conversation (#1338, @hl1221hl).
+- **Pi RPC mode** — RPC mode with `extension_ui` permission forwarding (#1440, @happyTonakai).
+- **Feishu `mention_map`** — outbound bot-to-bot `@` resolution via configurable name → open_id mapping (#1341 fixing #1322, @generspooler).
+- **Feishu relay** — route inter-bot visibility echoes back into caller's Feishu thread (#1413, @zhangshuaimk-boop).
+- **Russian (ru) i18n** — Web admin UI Russian locale (#1449, @sonsay).
+
+### Fixed
+- **display**: hide agent footer lines in progress output (#1416, @AaronZ345).
+- **core**: resume stream preview after permission prompt resolves (#1451, @happyTonakai).
+- **core**: always emit absolute paths from `SaveFilesToDisk` / `AppendFileRefs` — fixes relative `work_dir` attachments silently dropped by agent (#1462 fixing #1459, @chenhg5).
+- **core**: create queue placeholder before session lock — prevents concurrent message queue miss (#1389, @xxb).
+- **codex**: time out blocked app-server writes (#1448, @AaronZ345).
+- **slack**: suppress `NO_REPLY` marker on streaming-card silent replies (#1397, @spinsirr).
 
 ## v1.4.1-2 (2026-08-07)
 
@@ -23,157 +161,11 @@ Fork follow-up release based on upstream v1.4.1. The management binary now embed
 
 ## v1.4.1 (2026-06-28)
 
-Patch release focused on Kimi CLI compatibility for users on the newer `kimi-code` 0.14.x (which removed the `--print` flag). v1.4.1 probes the Kimi CLI at startup and conditionally passes `--print` only when the installed binary supports it. Older `kimi-cli` 1.48.x users keep working as-is — no config change required either way.
-
-This is the first release under the post-v1.4.0 SOP correction: every commit since v1.4.0 (in this case #1461) was put through a fresh manual QA cycle by cc-connect/qa-cursor before stable promotion, including owner-paired smoke testing on the actual binary against both Kimi CLI versions.
-
-See `changelogs/v1.4.1.md` for the full details with credits.
-
-### Fixed
-- **Kimi CLI `--print` compatibility** (#1461 fixing #1456, @chenhg5, reported by @WeiFengJL): newer `kimi-code` 0.14.x removed the `--print` flag, causing `error: unknown option '--print' (Did you mean --prompt?)` on agent startup. cc-connect now probes the Kimi CLI `--help` output and conditionally passes `--print` only when supported. Verified against `kimi-code` 0.14.2 (Print=false) and `kimi-cli` 1.48.0 (Print=true) on real binaries.
+Patch release: Kimi CLI `--print` compatibility (#1461 fixing #1456). See `changelogs/v1.4.1.md`.
 
 ## v1.4.0 (2026-06-28)
 
-Stable release of the v1.4.0 series. **Two new platforms join the family** (Cisco Webex, Matrix with E2EE), broader configurability across agents and platforms, Korean i18n, and a long list of fixes — including last-minute critical fixes for a `Send` goroutine race (#1436), a Feishu recall-probe quota burn (#1321), and a `run_as_user` EACCES regression (#1433).
-
-This stable rolls up everything from v1.4.0-beta.1 → beta.2 → beta.3 plus the 3 post-beta.3 cherry-picks (#1436, #1321 and a `drainPendingMessages` follow-up alignment).
-
-See `changelogs/v1.4.0.md` for the full themed summary with credits.
-
-### 🚨 Critical fixes shipped late in the cycle
-- **core Send-goroutine nil-pointer panic race** (#1436, @gotang; follow-up alignment of the third call site in `drainPendingMessages`): would crash the whole cc-connect process and drop every platform connection when an agent process exited just before a `Send` goroutine was scheduled. 100% reproducible in production.
-- **Feishu recall-probe quota burn** (#1321, @qvictl): `MessageRecallDetector` fallback path was polling every 2s, burning ~1.3M Feishu OpenAPI calls/month per stuck session and exhausting the 1M free quota. Probe interval now 1 minute with per-message dedup + in-flight guard.
-- **claudecode `run_as_user` EACCES regression** (#1433, @chenhg5; reported by @vuyiv #1429): chmod `0o644` on per-spawn system-prompt temp file so non-root child processes can read it. Fixes a regression introduced by v1.3.4 (#1376) — `run_as_user` users on beta.1/beta.2 were 100% blocked at agent startup.
-
-### v1.4.0 cycle highlights
-- **Cisco Webex** and **Matrix (with E2EE)** as new first-class platforms (#1402, #834).
-- **agent option parsing refactor**: centralize cmd/env option parsing into core with unified `cmd` field across all agent adapters (#1297).
-- **Slack streaming preview + aggregated turn card** (#1333).
-- **Feishu after_click card replacement for `cmd:` actions** (#1299).
-- **Codex custom `system_prompt` / `append_system_prompt` config** (#1345); codex `model_catalog_json` highest-priority source (#1074).
-- **Zhipu GLM provider presets** for `z.ai` and `bigmodel` CN endpoint (#1412).
-- **Korean (ko) i18n** for the Web admin UI (#1343), plus `nav.cron` translations for ko/ja/es.
-- **`plugin_dir` for Claude Code plugins** (#1325), `cc-connect send --cwd` workdir support (#1380), `max_attachment_size_mb` (#1392), `CC_LOG_MAX_BACKUPS` env var (#1260), configurable `/history` truncation (#1291).
-- 30+ fixes across feishu, slack, dingtalk, claudecode, codex, core engine, runas, web admin and i18n. Full list in `changelogs/v1.4.0.md`.
-
-### Upgrade notes
-- `cli_path` config field is deprecated in favour of unified `cmd` (#1297). Existing configs continue to work; a deprecation warning is logged. Migrate when convenient.
-- `imageBatchWindow` default for Feishu changed from 150 ms → 500 ms. Override in config if you preferred the older value.
-- `MessageRecallDetector` fallback probe interval changed from 2 s → 60 s. If you relied on the old aggressive polling for custom integrations, the new behaviour is deduped and gated.
-
-## v1.4.0-beta.3 (2026-06-28)
-
-Rolling beta with 3 additional commits on top of beta.2: one critical regression fix + two low-risk additions. Two additional critical fixes were cherry-picked on top of beta.3 ahead of the v1.4.0 stable cut.
-
-See `changelogs/v1.4.0-beta.3.md` for the full themed summary with credits.
-
-### Fixed
-- **🚨 claudecode `run_as_user` EACCES regression**: chmod `0o644` on per-spawn system-prompt temp file so non-root child processes can read it. Regression introduced by v1.3.4 (#1376) — `run_as_user` users on v1.4.0-beta.1/beta.2 were 100% blocked at agent startup. Reported by @vuyiv (#1429), fixed by @chenhg5 (#1433).
-- **🚨 core Send goroutine nil-pointer panic race**: capture `state.agentSession` under `state.mu` before launching `Send` goroutines and add a nil-check fallback inside each goroutine. `cleanupInteractiveState` nils `agentSession` while three `Send` goroutines previously read it without holding the lock; when an agent process exited just before its `Send` was scheduled, the whole cc-connect process would panic and drop every platform connection (#1436, @gotang; follow-up alignment of the third call site in `drainPendingMessages` by @qa-cursor).
-- **🚨 Feishu recall-probe quota burn**: throttle the `MessageRecallDetector` fallback path — was polling `GET /im/v1/messages/{message_id}` every 2 s for the same active message, burning ~1.3M Feishu OpenAPI calls/month per stuck session and exhausting the 1M/month free quota. Probe interval now 1 minute, per-message dedup + in-flight guard inside `interactiveState`. Reset on each new active message so recall detection still works for normal turns (#1321, @qvictl).
-
-### Features
-- **Zhipu GLM provider presets**: add `z.ai` and `bigmodel` (CN) preset entries to `provider-presets.json` (#1412, @clingnet).
-
-### Chore
-- `.gitignore`: add `.worktrees/` for local-only multi-agent scratch dirs (#1443, @chenhg5). Local-only, does not affect binary.
-
-## v1.4.0-beta.2 (2026-06-23)
-
-Rolling beta with 10 additional commits on top of beta.1: 3 QA-found hotfixes + 7 cherry-picked PRs from main. QA has verified all changes.
-
-See `changelogs/v1.4.0-beta.2.md` for the full themed summary with credits.
-
-### Features
-- **codex model_catalog_json**: prefer Codex's own `model_catalog_json` as highest-priority model source (#1074, @happyTonakai).
-- **`cc-connect send --cwd`**: specify the working directory for send commands (#1380, @MMMarcinho).
-
-### Refactor
-- **agent option parsing**: centralize cmd/env option parsing into core with a unified `cmd` field. Touches 39 files across all agent adapters (#1297, @happyTonakai). ⚠️ Broad refactor — monitor agent startup compatibility with existing configs.
-
-### Fixed
-- **feishu image batch window**: make `imageBatchWindow` configurable; bump default from 150 ms → 500 ms to better handle mobile multi-image bursts (QA hotfix, @qa-cursor).
-- **i18n nav.cron**: translate `nav.cron` for Korean, Japanese, Spanish — was leaking raw "Cron" string (QA hotfix, @qa-cursor).
-- **slack streaming card**: stop `chat.update` once payload exceeds Slack's size limit; deliver full reply via fresh `postMessage` instead of crashing with `msg_too_long` (QA hotfix, @qa-cursor).
-- **core /history truncation**: make `/history` entry truncation length configurable (#1291, @AaronZ345).
-- **core post-restart notification**: queue post-restart notification and dispatch on platform ready (#1388, @chenhg5).
-- **claudecode progress card**: emit `EventToolResult` so tool output reaches the progress card (#1407, @coolrockin).
-- **dingtalk stream panic**: recover panic in DingTalk `StreamClient` `processLoop` to prevent process crash on closed channel (#1390, fix for issue reported by @gd0094).
-- **claudecode run_as_user EACCES**: fix per-spawn system-prompt temp file `EACCES` under `run_as_user` (#1429). The per-spawn temp file written by `writeTempAppendPromptFile` inherited `os.CreateTemp`'s `0600` mode owned by the cc-connect process user (often root under systemd). When the agent was spawned under a different `run_as_user`, it could not read the file and exited before any prompt was loaded. The file is now `chmod 0o644` immediately after write, matching the shared `ensureSharedSystemPromptFile` path. Prompt content is non-secret (a superset of the already-shared base prompt), so `0644` is consistent with the shared file. Does not affect the shared-file path (already `0644` since #1376) or the daemon-mode path resolution (#1419) (#1433, @chenhg5).
-
-## v1.4.0-beta.1 (2026-06-22)
-
-First beta of the v1.4.0 series. **Two new platforms join the family** (Cisco Webex, Matrix with E2EE) plus broader configurability for claudecode/codex, Korean i18n, and a batch of fixes carried forward from late v1.3 development.
-
-The `v1.3.4` Windows-cmdline hotfix (released 2026-06-16 from `release/v1.3.4`) is also rolled into this branch via PR #1378.
-
-See `changelogs/v1.4.0-beta.1.md` for the full themed summary with credits.
-
-### New Platforms
-- **Cisco Webex** — first-class Webex Teams adapter with bot identity, message routing, and reply support (#1402).
-- **Matrix (with E2EE)** — first-class Matrix adapter including end-to-end encrypted room support (#834).
-
-### Features
-- **Slack streaming preview + aggregated turn card**: live streaming preview while the agent is thinking, collapses into a single aggregated turn card on completion (#1333).
-- **Feishu after_click card replacement for `cmd:` actions**: rich cards can now replace their content after a button click for `cmd:` action handlers (#1299).
-- **Codex custom `system_prompt` / `append_system_prompt` config**: codex agent now honours per-config `system_prompt` and `append_system_prompt` like claudecode does (#1345).
-- **Korean (ko) i18n**: Web admin UI now ships Korean translations alongside zh/en/ja (#1343).
-- **`plugin_dir` for Claude Code plugins**: claudecode agent supports loading plugins via `--plugin-dir`, exposed as a new `plugin_dir` config option (#1325).
-- **`max_attachment_size_mb` for `cc-connect send`**: configurable upper bound for outbound attachment size; default preserved (#1392).
-- **`CC_LOG_MAX_BACKUPS` env var**: control daemon log rotation backup count via env (#1260).
-
-### Fixed
-- **claudecode (Windows cmdline limit)**: file-based system prompt delivery via `--append-system-prompt-file` lands on main (port of the v1.3.4 hotfix). Windows users on claudecode are no longer affected by the cmd.exe 8192-byte cmdline limit (#1378 porting #1376).
-- **feishu (batch images dropped)**: coalesce consecutive image messages from the same session into a single multi-image dispatch (150 ms quiet window) so first-image-of-N is no longer dropped by the `create_time` watermark from PR #1168 (#1408 carrying #1395).
-- **feishu (markdown text_color)**: keep `text_color` on `plain_text` elements only; removing it from `markdown` elements fixes rendering glitches (#1278).
-- **workspace model persistence**: workspace-level model selections now persist across restarts instead of resetting to default (#1372).
-- **acp graceful `/stop`**: new `AgentSessionCanceller` interface lets `/stop` shut a session down gracefully via ACP (#1275).
-- **core FIFO drain**: queued messages now drain strictly in FIFO order, preventing earlier queued messages from being dropped as stale when a later one has a higher `create_time` (#1286).
-- **skill discovery depth-1 only**: skill scanning no longer recurses into subdirectories. Only `<skill_dir>/<name>/SKILL.md` is registered; nested SKILL.md files are treated as skill assets and ignored, matching Claude Code CLI conventions. Previously, nested SKILL.md leaked into platform command menus as phantom slash commands (101 leaked commands from `frontend-design` skill alone) (#1317 carrying #1304).
-- **engine workspace binding under `run_as_user`**: keep workspace binding even when the supervisor cannot stat it under `run_as_user` (#1316).
-- **runas workspace**: run the agent in its own workspace under `run_as_user` (#1315).
-- **claudecode mid-turn compaction**: keep the turn running when a compaction event arrives mid-turn (fixes #481) (#1272).
-- **cron permission lookup with composite keys**: pending permission lookup for cron sessions now resolves correctly when the key is composite (#1067).
-- **core (post-restart notification race)**: queue the `/restart` success notification on the engine and dispatch it when the target platform reaches `OnPlatformReady` (with bounded retry + 10s safety timeout) instead of firing immediately after engine startup. Closes the race where notifications were silently dropped on platforms with async connect (Telegram: ~2.6s). Covers Discord / Weixin / Matrix for free (#1388 closing #1383).
-
-### Tests
-- Regression test for issue #814 — verifies queued messages use their own `replyCtx` via the outer drain (#1261).
-
-### Docs
-- Remove four lapsed sponsor entries from README sponsor section (#1404).
-
-### Behavior Changes
-None. Existing configs upgrade without changes. New config options (`plugin_dir`, `max_attachment_size_mb`, codex `system_prompt`/`append_system_prompt`, `CC_LOG_MAX_BACKUPS`) are all optional with safe defaults.
-
-### Breaking Changes
-None.
-
-## v1.3.4 (2026-06-16) — Windows hotfix
-
-Emergency single-fix release for a Windows-only regression introduced in v1.3.3.
-**Upgrade strongly recommended for Windows users running the claudecode agent.**
-Linux / macOS and non-claudecode users are unaffected by the v1.3.3 bug and may
-upgrade at leisure. No config changes required. See `changelogs/v1.3.4.md` for the
-full root-cause writeup and verification notes.
-
-### Fixed
-- **Windows: all messages silently never reply on v1.3.3** ([#1376](https://github.com/chenhg5/cc-connect/issues/1376)).
-  Root cause: v1.3.3 expanded `core.AgentSystemPrompt()` from 2707 → 9055 bytes,
-  which busted Windows `cmd.exe`'s 8192-byte command-line limit when cc-connect
-  spawned `claude.exe` with `--append-system-prompt <inline 9KB>`. Fix: pass the
-  prompt to `claude.exe` via `--append-system-prompt-file <path>` instead of inline
-  (single shared file at `<data_dir>/agent-prompts/cc-connect-system.md` for the
-  99% path; per-spawn temp file for the 1% edge cases like Slack / Weixin / MAX /
-  user-configured `append_system_prompt`). Prompt content is **identical** to
-  v1.3.3 — only the delivery mechanism changed.
-
-### Scope
-3 files changed, +323/-9, all in `agent/claudecode/`. No changes elsewhere.
-
-### Credits
-Reporters [@secountAiAccount](https://github.com/secountAiAccount) and
-[@softxyz1](https://github.com/softxyz1) for unblocking us within hours of v1.3.3
-going stable.
+Stable release: Webex + Matrix E2EE platforms, agent option parsing refactor (#1297), 30+ fixes. See `changelogs/v1.4.0.md`.
 
 ## v1.3.3 (2026-06-15)
 

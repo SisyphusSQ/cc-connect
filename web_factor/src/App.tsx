@@ -3,6 +3,7 @@ import enUS from 'antd/es/locale/en_US';
 import esES from 'antd/es/locale/es_ES';
 import jaJP from 'antd/es/locale/ja_JP';
 import koKR from 'antd/es/locale/ko_KR';
+import ruRU from 'antd/es/locale/ru_RU';
 import zhCN from 'antd/es/locale/zh_CN';
 import zhTW from 'antd/es/locale/zh_TW';
 import { Flex, Spin } from 'antd';
@@ -45,6 +46,7 @@ const antdLocales: Record<string, typeof enUS> = {
   es: esES,
   ja: jaJP,
   ko: koKR,
+  ru: ruRU,
   zh: zhCN,
   'zh-TW': zhTW,
 };
